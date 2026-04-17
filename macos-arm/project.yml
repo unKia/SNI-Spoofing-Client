@@ -1,0 +1,122 @@
+name: SniSpoofingMac
+options:
+  minimumXcodeGenVersion: 2.44.1
+  deploymentTarget:
+    macOS: "14.0"
+schemes:
+  SniSpoofingMac:
+    build:
+      targets:
+        SniSpoofingMac: all
+        SniProxyHelper: [run, test, profile, analyze, archive]
+        SniPacketTunnel: [run, test, profile, analyze, archive]
+    run:
+      config: Debug
+      executable: SniSpoofingMac
+    test:
+      config: Debug
+    analyze:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release
+    management:
+      shared: true
+      isShown: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: NMVD5BGX82
+    SWIFT_VERSION: 5.0
+targets:
+  SniSpoofingMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/ContentView.swift
+      - path: App/AppLocalization.swift
+      - path: App/LocalProxyService.swift
+      - path: App/SniSpoofingMacApp.swift
+      - path: App/TunnelController.swift
+      - path: App/VlessParser.swift
+      - path: App/XrayManager.swift
+      - path: App/Assets.xcassets
+      - path: Shared/LibpcapBridge.m
+      - path: Shared/LibpcapBridge.h
+      - path: Shared/RawPacketSupport.swift
+      - path: Shared/SystemNetworkUtils.swift
+      - path: Shared/TunnelConfiguration.swift
+      - path: Shared/TunnelMessages.swift
+      - path: Shared/TLSClientHelloBuilder.swift
+      - path: App/Resources/xray.bin
+      - path: App/Resources/flag_uk.svg
+      - path: App/Resources/flag_ir.svg
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: SNI-Spoofing Client
+        LSMinimumSystemVersion: "14.0"
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.sni.macos
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: App/SniSpoofingMac.entitlements
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_OBJC_BRIDGING_HEADER: App/SniSpoofingMac-Bridging-Header.h
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -lpcap
+    dependencies:
+      - sdk: NetworkExtension.framework
+      - target: SniPacketTunnel
+        embed: true
+  SniProxyHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Helper/PrivilegedHelperMain.swift
+      - path: App/LocalProxyService.swift
+      - path: Shared/LibpcapBridge.m
+      - path: Shared/LibpcapBridge.h
+      - path: Shared/RawPacketSupport.swift
+      - path: Shared/SystemNetworkUtils.swift
+      - path: Shared/TunnelConfiguration.swift
+      - path: Shared/TLSClientHelloBuilder.swift
+    settings:
+      base:
+        PRODUCT_NAME: sni-proxy-helper
+        CODE_SIGNING_ALLOWED: NO
+        SWIFT_OBJC_BRIDGING_HEADER: Helper/SniProxyHelper-Bridging-Header.h
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -lpcap
+  SniPacketTunnel:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: PacketTunnel/PacketTunnelProvider.swift
+      - path: PacketTunnel/TunnelTrafficBridge.swift
+      - path: PacketTunnel/PacketParser.swift
+      - path: PacketTunnel/SpoofingEngine.swift
+      - path: Shared/TunnelConfiguration.swift
+      - path: Shared/TunnelMessages.swift
+      - path: Shared/TLSClientHelloBuilder.swift
+    info:
+      path: PacketTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: SNI Packet Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    settings:
+      base:
+        PRODUCT_NAME: PacketTunnel
+        PRODUCT_MODULE_NAME: PacketTunnel
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.sni.macos.packet-tunnel
+        CODE_SIGN_ENTITLEMENTS: PacketTunnel/SniPacketTunnel.entitlements
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: NO
+    dependencies:
+      - sdk: NetworkExtension.framework
+      - sdk: Network.framework
