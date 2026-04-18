@@ -90,6 +90,11 @@ private enum ConnectionWorkflowError: LocalizedError {
 
 @MainActor
 final class TunnelController: ObservableObject {
+    struct DiagnosticDumpArtifact {
+        let text: String
+        let fileURL: URL
+    }
+
     @Published var configuration: TunnelConfiguration = .defaults
     @Published var selectedConnectionMode: AppConnectionMode = .proxy
     @Published var whitelistDomainInput = TunnelConfiguration.defaults.fakeSNI
@@ -140,8 +145,14 @@ final class TunnelController: ObservableObject {
     private var activeDNSConfigurationSnapshot: DNSConfigurationSnapshot?
     
     private var lastSpeedUpdate = Date()
+    private var lastTrafficUpdate = Date()
     private var lastBytesUploaded = 0
     private var lastBytesDownloaded = 0
+    private var hasSpeedBaseline = false
+    private var pendingUploadedBytes = 0
+    private var pendingDownloadedBytes = 0
+    private var smoothedUploadSpeed = 0.0
+    private var smoothedDownloadSpeed = 0.0
     private var copy: AppCopy {
         AppCopy(language: AppLanguageStore.shared.selectedLanguage)
     }
@@ -267,6 +278,7 @@ final class TunnelController: ObservableObject {
             )
             let status = try TunnelIPC.decode(TunnelProviderStatus.self, from: responseData)
             providerStatusDescription = Self.describeProviderStatus(status)
+            consumeTunnelStatus(status, source: "provider")
             appendLog(level: .info, source: "provider", message: "Provider status refreshed")
             lastErrorDescription = ""
         } catch {
@@ -286,6 +298,7 @@ final class TunnelController: ObservableObject {
             )
             let status = try TunnelIPC.decode(TunnelProviderStatus.self, from: responseData)
             providerStatusDescription = Self.describeProviderStatus(status)
+            consumeTunnelStatus(status, source: "provider")
             appendLog(level: .info, source: "provider", message: "Provider configuration reloaded")
             lastErrorDescription = ""
         } catch {
@@ -294,11 +307,11 @@ final class TunnelController: ObservableObject {
     }
 
     func startProxy() {
-        startPrivilegedHelper()
+        Task { await startPrivilegedHelper() }
     }
 
     func stopProxy() {
-        stopPrivilegedHelper()
+        Task { await stopPrivilegedHelper() }
     }
 
     func startEmbeddedProxy() {
@@ -316,24 +329,24 @@ final class TunnelController: ObservableObject {
         appendLog(level: .info, source: "embedded", message: "Embedded proxy stopped")
     }
 
-    func startPrivilegedHelper() {
+    func startPrivilegedHelper() async {
         isBusy = true
         defer { isBusy = false }
 
         do {
-            try startPrivilegedHelperInternal()
+            try await startPrivilegedHelperInternal()
             lastErrorDescription = ""
         } catch {
             fail("Failed to start helper: \(error.localizedDescription)")
         }
     }
 
-    func stopPrivilegedHelper() {
+    func stopPrivilegedHelper() async {
         isBusy = true
         defer { isBusy = false }
 
         do {
-            try stopPrivilegedHelperInternal()
+            try await stopPrivilegedHelperInternal()
             appendLog(level: .info, source: "app", message: copy.stopRequestSent)
             lastErrorDescription = ""
         } catch {
@@ -350,6 +363,7 @@ final class TunnelController: ObservableObject {
 
     func connectEmbeddedFlow() {
         guard !isBusy else { return }
+        isBusy = true
         Task {
             await performEmbeddedConnection()
         }
@@ -357,6 +371,7 @@ final class TunnelController: ObservableObject {
 
     func disconnectEmbeddedFlow() {
         guard !isBusy else { return }
+        isBusy = true
         Task {
             await disconnectWorkflow(preserveStatusMessage: false)
         }
@@ -385,7 +400,7 @@ final class TunnelController: ObservableObject {
             let draft = try validateConnectionDraft()
             updateWorkflowStep(.whitelist, state: .success, detail: "\(draft.whitelistDomain) -> \(draft.whitelistIP):\(draft.whitelistPort)")
             updateWorkflowStep(.vless, state: .success, detail: "\(draft.vless.remark) | \(draft.vless.network.uppercased())/\(draft.vless.security.uppercased())")
-            let dnsServers = try Self.discoverDNSServers()
+            let dnsServers = try await Self.discoverDNSServers()
 
             let localProxyPort = TunnelConfiguration.stageOneProxyPort
             let socksPort = TunnelConfiguration.fixedSocksProxyPort
@@ -416,8 +431,8 @@ final class TunnelController: ObservableObject {
             connectionHeadline = copy.startingLocalProxyHeadline
             connectionDetail = copy.localProxyStartingDetail
             do {
-                try startPrivilegedHelperInternal()
-                try waitForHelperReadiness()
+                try await startPrivilegedHelperInternal()
+                try await waitForHelperReadiness()
             } catch {
                 throw ConnectionWorkflowError.localProxy(error.localizedDescription)
             }
@@ -442,7 +457,7 @@ final class TunnelController: ObservableObject {
                     source: "xray",
                     message: "Xray config prepared | mode=\(connectionMode.rawValue) | outbound=\(xrayOutboundAddress):\(xrayOutboundPort) | original=\(draft.vless.originalAddress):\(draft.vless.originalPort) | spoofTarget=\(draft.whitelistIP):\(draft.whitelistPort) | network=\(draft.vless.network) | security=\(draft.vless.security) | sni=\(draft.vless.sni) | host=\(draft.vless.host) | path=\(draft.vless.path) | logLevel=\(configuration.logLevel.rawValue)"
                 )
-                try xrayManager.start(configString: xrayConfig)
+                try await xrayManager.start(configString: xrayConfig)
             } catch {
                 let xrayOutput = xrayManager.recentOutputSnapshot().trimmingCharacters(in: .whitespacesAndNewlines)
                 let detail = xrayOutput.isEmpty ? error.localizedDescription : xrayOutput
@@ -457,7 +472,7 @@ final class TunnelController: ObservableObject {
                 updateWorkflowStep(.systemProxy, state: .running, detail: "Configuring the system proxy for active services")
                 connectionHeadline = copy.enablingProxyRouteHeadline
                 connectionDetail = copy.systemProxyDetail
-                routeContext = try enableSystemProxy(httpPort: httpPort, socksPort: socksPort)
+                routeContext = try await enableSystemProxy(httpPort: httpPort, socksPort: socksPort)
                 routeManagerSummary = "System proxy | \(routeContext.joined(separator: ", "))"
                 updateWorkflowStep(.systemProxy, state: .success, detail: routeContext.joined(separator: ", "))
             case .tunnel:
@@ -467,7 +482,7 @@ final class TunnelController: ObservableObject {
                 let providerStatus = try await startManagedTunnelSession()
                 if !configuration.dnsServers.isEmpty {
                     do {
-                        let dnsSnapshot = try applySystemDNSServers(configuration.dnsServers)
+                        let dnsSnapshot = try await applySystemDNSServers(configuration.dnsServers)
                         activeDNSConfigurationSnapshot = dnsSnapshot
                         appendLog(level: .info, source: "system", message: "System DNS enabled for tunnel: \(configuration.dnsServers.joined(separator: ", "))")
                     } catch {
@@ -477,6 +492,7 @@ final class TunnelController: ObservableObject {
                 routeContext = []
                 routeManagerSummary = "Packet tunnel | \(providerStatus.phase)"
                 providerStatusDescription = Self.describeProviderStatus(providerStatus)
+                consumeTunnelStatus(providerStatus, source: "provider")
                 updateWorkflowStep(.systemProxy, state: .success, detail: providerStatus.detail ?? "Tunnel session connected")
             }
 
@@ -575,18 +591,18 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    private func startPrivilegedHelperInternal() throws {
+    private func startPrivilegedHelperInternal() async throws {
         resetLogStateForFreshStart()
         try writeHelperConfiguration()
-        try Self.runPrivilegedShell(helperStartCommand())
+        try await Self.runPrivilegedShell(helperStartCommand())
         isPrivilegedHelperRunning = true
         helperStateDescription = copy.privilegedHelperRunning
         appendLog(level: .info, source: "app", message: "Helper start request sent")
         startHelperLogPolling()
     }
 
-    private func stopPrivilegedHelperInternal() throws {
-        try Self.runPrivilegedShell(helperStopCommand())
+    private func stopPrivilegedHelperInternal() async throws {
+        try await Self.runPrivilegedShell(helperStopCommand())
         isPrivilegedHelperRunning = false
         helperStateDescription = copy.privilegedHelperStopped
         clearProxyRuntimeState(detail: "Helper stopped")
@@ -604,10 +620,16 @@ final class TunnelController: ObservableObject {
         proxyInterfaceDescription = "-"
         lastBytesUploaded = 0
         lastBytesDownloaded = 0
+        hasSpeedBaseline = false
+        pendingUploadedBytes = 0
+        pendingDownloadedBytes = 0
+        smoothedUploadSpeed = 0
+        smoothedDownloadSpeed = 0
         lastSpeedUpdate = Date()
+        lastTrafficUpdate = Date()
     }
 
-    private func waitForHelperReadiness(timeout: TimeInterval = 6) throws {
+    private func waitForHelperReadiness(timeout: TimeInterval = 6) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             refreshHelperState()
@@ -624,7 +646,7 @@ final class TunnelController: ObservableObject {
                 return
             }
 
-            Thread.sleep(forTimeInterval: 0.2)
+            try await Task.sleep(nanoseconds: 200_000_000)
         }
 
         let excerpt = latestHelperLogExcerpt()
@@ -815,8 +837,8 @@ final class TunnelController: ObservableObject {
         return try TunnelIPC.decode(TunnelProviderStatus.self, from: responseData)
     }
 
-    private func enableSystemProxy(httpPort: Int, socksPort: Int) throws -> [String] {
-        let services = try Self.listActiveNetworkServices()
+    private func enableSystemProxy(httpPort: Int, socksPort: Int) async throws -> [String] {
+        let services = try await Self.listActiveNetworkServices()
         guard !services.isEmpty else {
             throw ConnectionWorkflowError.systemProxy("No active macOS network service was found.")
         }
@@ -833,7 +855,7 @@ final class TunnelController: ObservableObject {
             ]
         }
         do {
-            try Self.runPrivilegedShell(commands.joined(separator: "; "))
+            try await Self.runPrivilegedShell(commands.joined(separator: "; "))
         } catch {
             throw ConnectionWorkflowError.systemProxy(error.localizedDescription)
         }
@@ -841,8 +863,8 @@ final class TunnelController: ObservableObject {
         return services
     }
 
-    private func disableSystemProxy() throws {
-        let services = try Self.listActiveNetworkServices()
+    private func disableSystemProxy() async throws {
+        let services = try await Self.listActiveNetworkServices()
         guard !services.isEmpty else {
             return
         }
@@ -854,7 +876,7 @@ final class TunnelController: ObservableObject {
                 "/usr/sbin/networksetup -setsocksfirewallproxystate \(Self.shellQuote(service)) off",
             ]
         }
-        try Self.runPrivilegedShell(commands.joined(separator: "; "))
+        try await Self.runPrivilegedShell(commands.joined(separator: "; "))
         appendLog(level: .info, source: "system", message: "System proxy disabled")
     }
 
@@ -892,13 +914,13 @@ final class TunnelController: ObservableObject {
 
         if cleanupMode == .proxy {
             do {
-                try disableSystemProxy()
+                try await disableSystemProxy()
             } catch {
                 failures.append("system proxy: \(error.localizedDescription)")
             }
         } else if cleanupMode == .tunnel {
             do {
-                try restoreSystemDNSIfNeeded()
+                try await restoreSystemDNSIfNeeded()
             } catch {
                 failures.append("system dns: \(error.localizedDescription)")
             }
@@ -910,7 +932,7 @@ final class TunnelController: ObservableObject {
 
         if isPrivilegedHelperRunning {
             do {
-                try stopPrivilegedHelperInternal()
+                try await stopPrivilegedHelperInternal()
             } catch {
                 failures.append("helper: \(error.localizedDescription)")
             }
@@ -939,12 +961,18 @@ final class TunnelController: ObservableObject {
         if isConnected || isPrivilegedHelperRunning || xrayManager.isRunning {
             manager?.connection.stopVPNTunnel()
             if (activeConnectionContext?.mode ?? selectedConnectionMode) == .proxy {
-                try? disableSystemProxy()
+                Task { [weak self] in
+                    try? await self?.disableSystemProxy()
+                }
             } else if (activeConnectionContext?.mode ?? selectedConnectionMode) == .tunnel {
-                try? restoreSystemDNSIfNeeded()
+                Task { [weak self] in
+                    try? await self?.restoreSystemDNSIfNeeded()
+                }
             }
             xrayManager.stop()
-            try? stopPrivilegedHelperInternal()
+            Task { [weak self] in
+                try? await self?.stopPrivilegedHelperInternal()
+            }
         }
     }
 
@@ -975,7 +1003,7 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    func applyLogLevelChangeImmediately() {
+    func applyLogLevelChangeImmediately() async {
         do {
             try writeHelperConfiguration()
             guard isPrivilegedHelperRunning else {
@@ -983,11 +1011,15 @@ final class TunnelController: ObservableObject {
                 return
             }
 
-            try Self.runPrivilegedShell(helperRestartCommand())
-            isPrivilegedHelperRunning = true
-            helperStateDescription = copy.privilegedHelperRunning
-            appendLog(level: .info, source: "app", message: "Log level updated")
-            lastErrorDescription = ""
+            do {
+                try await Self.runPrivilegedShell(helperRestartCommand())
+                isPrivilegedHelperRunning = true
+                helperStateDescription = copy.privilegedHelperRunning
+                appendLog(level: .info, source: "app", message: "Log level updated")
+                lastErrorDescription = ""
+            } catch {
+                fail("Failed to apply log level change: \(error.localizedDescription)")
+            }
         } catch {
             fail("Failed to apply log level change: \(error.localizedDescription)")
         }
@@ -1136,6 +1168,43 @@ final class TunnelController: ObservableObject {
         appendLog(level: status.logLevel, source: source, message: Self.describeNativeProxyStatus(status))
     }
 
+    private func consumeTunnelStatus(_ status: TunnelProviderStatus, source: String) {
+        providerStatusDescription = Self.describeProviderStatus(status)
+        updateSpeeds(up: status.bytesUploaded, down: status.bytesDownloaded)
+        appendLog(level: .debug, source: source, message: Self.describeProviderStatus(status))
+    }
+
+    func noteDiagnosticDumpCopied(byteCount: Int, path: String) {
+        appendLog(level: .info, source: "app", message: "Diagnostic dump copied to clipboard | bytes=\(byteCount) | path=\(path)")
+    }
+
+    func noteDiagnosticDumpCopyFailed(path: String) {
+        appendLog(level: .error, source: "app", message: "Failed to copy diagnostic dump to clipboard | saved=\(path)")
+    }
+
+    func noteVisibleLogsCopied() {
+        appendLog(level: .info, source: "app", message: "Visible logs copied to clipboard")
+    }
+
+    func noteVisibleLogsCopyFailed() {
+        appendLog(level: .error, source: "app", message: "Failed to copy visible logs to clipboard")
+    }
+
+    func failDiagnosticDumpPreparation(_ description: String) {
+        appendLog(level: .error, source: "app", message: "Diagnostic dump preparation failed | \(description)")
+    }
+
+    func prepareDiagnosticDumpArtifact() async throws -> DiagnosticDumpArtifact {
+        let text = await diagnosticDump()
+        try FileManager.default.createDirectory(
+            at: Self.helperSupportDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        let fileURL = Self.diagnosticDumpURL
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+        return DiagnosticDumpArtifact(text: text, fileURL: fileURL)
+    }
+
     private func startHelperLogPolling() {
         helperLogTimer?.invalidate()
         helperLogTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
@@ -1281,7 +1350,7 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    func diagnosticDump() -> String {
+    func diagnosticDump() async -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .medium
@@ -1316,7 +1385,7 @@ final class TunnelController: ObservableObject {
         lines.append("Active proxy summary: \(activeProxySummary)")
         lines.append("Allowlist domain input: \(whitelistDomainInput)")
         lines.append("Allowlist IP input: \(whitelistIPInput)")
-        lines.append("VLESS input: \(vlessConfigInput)")
+        lines.append("Config input: \(vlessConfigInput)")
         lines.append("Log level: \(configuration.logLevel.rawValue)")
         lines.append("Configuration:")
         lines.append("  listenHost=\(configuration.listenHost)")
@@ -1356,6 +1425,27 @@ final class TunnelController: ObservableObject {
         }
 
         let xraySnapshot = xrayManager.recentOutputSnapshot().trimmingCharacters(in: .whitespacesAndNewlines)
+        async let helperLogTailTask: String? = try? await Self.runProcess(
+            launchPath: "/usr/bin/tail",
+            arguments: ["-n", "50", Self.helperLogURL.path],
+            timeout: 2
+        )
+        async let psSnapshotTask: String? = try? await Self.runProcess(
+            launchPath: "/bin/ps",
+            arguments: ["aux", "-c"],
+            timeout: 2
+        )
+        async let proxySnapshotTask: String? = try? await Self.runProcess(
+            launchPath: "/usr/sbin/scutil",
+            arguments: ["--proxy"],
+            timeout: 3
+        )
+        async let dnsSnapshotTask: String? = try? await Self.runProcess(
+            launchPath: "/usr/sbin/scutil",
+            arguments: ["--dns"],
+            timeout: 3
+        )
+
         lines.append("Xray snapshot (last 8KB):")
         lines.append(xraySnapshot.isEmpty ? "  (empty)" : "  \(xraySnapshot.replacingOccurrences(of: "\n", with: "\n  "))")
 
@@ -1363,20 +1453,20 @@ final class TunnelController: ObservableObject {
         lines.append("Helper log path: \(helperLogPath)")
         
         lines.append("Raw Helper log tail (last 50 lines):")
-        if let logTail = try? Self.runProcess(launchPath: "/usr/bin/tail", arguments: ["-n", "50", helperLogPath]) {
+        if let logTail = await helperLogTailTask {
              lines.append(logTail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "  (empty)" : "  \(logTail.replacingOccurrences(of: "\n", with: "\n  "))")
         } else {
              lines.append("  (failed to read log file)")
         }
 
         lines.append("Process status:")
-        if let psHelper = try? Self.runProcess(launchPath: "/bin/ps", arguments: ["aux", "-c"]) {
+        if let psHelper = await psSnapshotTask {
             let helperLines = psHelper.split(separator: "\n").filter { $0.contains("helper") || $0.contains("xray") }
             lines.append(helperLines.isEmpty ? "  (no helper/xray found in ps)" : "  \(helperLines.joined(separator: "\n  "))")
         }
 
         lines.append("scutil --proxy:")
-        if let proxySnapshot = try? Self.runProcess(launchPath: "/usr/sbin/scutil", arguments: ["--proxy"]) {
+        if let proxySnapshot = await proxySnapshotTask {
             lines.append(proxySnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "  (empty)" : "  \(proxySnapshot.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: "\n  "))")
         } else {
             lines.append("  (failed)")
@@ -1394,7 +1484,7 @@ final class TunnelController: ObservableObject {
             lines.append("  (none)")
         }
         lines.append("scutil --dns (first 120 lines):")
-        if let dnsSnapshot = try? Self.runProcess(launchPath: "/usr/sbin/scutil", arguments: ["--dns"]) {
+        if let dnsSnapshot = await dnsSnapshotTask {
             let compact = dnsSnapshot
                 .split(whereSeparator: \.isNewline)
                 .prefix(120)
@@ -1472,18 +1562,69 @@ final class TunnelController: ObservableObject {
 
     private func updateSpeeds(up: Int, down: Int) {
         let now = Date()
-        let dt = now.timeIntervalSince(lastSpeedUpdate)
-        // Update speeds at least every 0.3s for a "live" feel
-        if dt >= 0.3 {
-            proxyUploadSpeed = max(0, Int(Double(up - lastBytesUploaded) / dt))
-            proxyDownloadSpeed = max(0, Int(Double(down - lastBytesDownloaded) / dt))
-            lastBytesUploaded = up
-            lastBytesDownloaded = down
-            lastSpeedUpdate = now
-        }
         proxyBytesUploaded = up
         proxyBytesDownloaded = down
         proxyTotalBytes = up + down
+
+        guard hasSpeedBaseline else {
+            hasSpeedBaseline = true
+            lastBytesUploaded = up
+            lastBytesDownloaded = down
+            lastSpeedUpdate = now
+            lastTrafficUpdate = now
+            return
+        }
+
+        if up < lastBytesUploaded || down < lastBytesDownloaded {
+            lastBytesUploaded = up
+            lastBytesDownloaded = down
+            pendingUploadedBytes = 0
+            pendingDownloadedBytes = 0
+            smoothedUploadSpeed = 0
+            smoothedDownloadSpeed = 0
+            proxyUploadSpeed = 0
+            proxyDownloadSpeed = 0
+            lastSpeedUpdate = now
+            lastTrafficUpdate = now
+            return
+        }
+
+        pendingUploadedBytes += max(0, up - lastBytesUploaded)
+        pendingDownloadedBytes += max(0, down - lastBytesDownloaded)
+        lastBytesUploaded = up
+        lastBytesDownloaded = down
+
+        let dt = now.timeIntervalSince(lastSpeedUpdate)
+        guard dt >= 0.45 else { return }
+
+        let hasTrafficChange = pendingUploadedBytes != 0 || pendingDownloadedBytes != 0
+        if hasTrafficChange {
+            let rawUploadSpeed = Double(pendingUploadedBytes) / dt
+            let rawDownloadSpeed = Double(pendingDownloadedBytes) / dt
+            let smoothing = min(max(dt / 1.1, 0.16), 0.34)
+
+            smoothedUploadSpeed += (rawUploadSpeed - smoothedUploadSpeed) * smoothing
+            smoothedDownloadSpeed += (rawDownloadSpeed - smoothedDownloadSpeed) * smoothing
+            proxyUploadSpeed = Int(smoothedUploadSpeed.rounded())
+            proxyDownloadSpeed = Int(smoothedDownloadSpeed.rounded())
+            pendingUploadedBytes = 0
+            pendingDownloadedBytes = 0
+            lastTrafficUpdate = now
+        } else if now.timeIntervalSince(lastTrafficUpdate) >= 1.2 {
+            smoothedUploadSpeed *= 0.72
+            smoothedDownloadSpeed *= 0.72
+
+            if smoothedUploadSpeed < 24 {
+                smoothedUploadSpeed = 0
+            }
+            if smoothedDownloadSpeed < 24 {
+                smoothedDownloadSpeed = 0
+            }
+
+            proxyUploadSpeed = Int(smoothedUploadSpeed.rounded())
+            proxyDownloadSpeed = Int(smoothedDownloadSpeed.rounded())
+        }
+        lastSpeedUpdate = now
     }
 
     private static func describeConnectionStatus(_ status: NEVPNStatus) -> String {
@@ -1509,6 +1650,8 @@ final class TunnelController: ObservableObject {
         var parts = [
             "phase=\(status.phase)",
             "packets=\(status.packetCount)",
+            "up=\(status.bytesUploaded)",
+            "down=\(status.bytesDownloaded)",
             "target=\(status.connectIP):\(status.connectPort)",
             "sni=\(status.fakeSNI)",
         ]
@@ -1549,6 +1692,8 @@ final class TunnelController: ObservableObject {
         var parts = [
             "phase=\(status.phase)",
             "connections=\(status.activeConnections)",
+            "up=\(status.bytesUploaded)",
+            "down=\(status.bytesDownloaded)",
         ]
         if let interfaceName = status.interfaceName, let interfaceIPv4 = status.interfaceIPv4 {
             parts.append("iface=\(interfaceName)(\(interfaceIPv4))")
@@ -1697,8 +1842,8 @@ final class TunnelController: ObservableObject {
         return port
     }
 
-    private static func listActiveNetworkServices() throws -> [String] {
-        let output = try runProcess(
+    private static func listActiveNetworkServices() async throws -> [String] {
+        let output = try await runProcess(
             launchPath: "/usr/sbin/networksetup",
             arguments: ["-listallnetworkservices"]
         )
@@ -1708,12 +1853,12 @@ final class TunnelController: ObservableObject {
             .filter { !$0.isEmpty && !$0.hasPrefix("An asterisk") && !$0.hasPrefix("*") }
     }
 
-    private static func discoverDNSServers() throws -> [String] {
-        let services = try listActiveNetworkServices()
+    private static func discoverDNSServers() async throws -> [String] {
+        let services = try await listActiveNetworkServices()
         var servers = Set<String>()
 
         for service in services {
-            let output = try? runProcess(
+            let output = try? await runProcess(
                 launchPath: "/usr/sbin/networksetup",
                 arguments: ["-getdnsservers", service]
             )
@@ -1734,57 +1879,62 @@ final class TunnelController: ObservableObject {
         return servers.sorted()
     }
 
-    private func applySystemDNSServers(_ servers: [String]) throws -> DNSConfigurationSnapshot {
-        let services = try Self.listActiveNetworkServices()
+    private func applySystemDNSServers(_ servers: [String]) async throws -> DNSConfigurationSnapshot {
+        let services = try await Self.listActiveNetworkServices()
         guard !services.isEmpty else {
             throw ConnectionWorkflowError.systemProxy("No active macOS network service was found.")
         }
 
-        let snapshot = try captureSystemDNSConfiguration(services: services)
+        let snapshot = try await captureSystemDNSConfiguration(services: services)
         let quotedServers = servers.map(Self.shellQuote).joined(separator: " ")
         let commands = services.map { service in
             "/usr/sbin/networksetup -setdnsservers \(Self.shellQuote(service)) \(quotedServers)"
         }
-        try Self.runPrivilegedShell(commands.joined(separator: "; "))
+        try await Self.runPrivilegedShell(commands.joined(separator: "; "))
         appendLog(level: .debug, source: "system", message: "System DNS applied to: \(services.joined(separator: ", "))")
         return snapshot
     }
 
-    private func restoreSystemDNSIfNeeded() throws {
+    private func restoreSystemDNSIfNeeded() async throws {
         guard let snapshot = activeDNSConfigurationSnapshot else {
             return
         }
 
-        try restoreSystemDNSConfiguration(snapshot)
+        try await restoreSystemDNSConfiguration(snapshot)
         activeDNSConfigurationSnapshot = nil
         appendLog(level: .info, source: "system", message: "System DNS restored")
     }
 
-    private func captureSystemDNSConfiguration(services: [String]) throws -> DNSConfigurationSnapshot {
-        let snapshots = services.compactMap { service -> DNSServiceSnapshot? in
-            guard let output = try? Self.runProcess(
+    private func captureSystemDNSConfiguration(services: [String]) async throws -> DNSConfigurationSnapshot {
+        var snapshots: [DNSServiceSnapshot] = []
+        snapshots.reserveCapacity(services.count)
+
+        for service in services {
+            guard let output = try? await Self.runProcess(
                 launchPath: "/usr/sbin/networksetup",
                 arguments: ["-getdnsservers", service]
             ) else {
-                return DNSServiceSnapshot(service: service, servers: nil)
+                snapshots.append(DNSServiceSnapshot(service: service, servers: nil))
+                continue
             }
 
             let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.contains("There aren't any DNS Servers set") {
-                return DNSServiceSnapshot(service: service, servers: nil)
+                snapshots.append(DNSServiceSnapshot(service: service, servers: nil))
+                continue
             }
 
             let servers = trimmed
                 .split(whereSeparator: \.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { $0.isValidIPv4Address }
-            return DNSServiceSnapshot(service: service, servers: servers.isEmpty ? nil : servers)
+            snapshots.append(DNSServiceSnapshot(service: service, servers: servers.isEmpty ? nil : servers))
         }
 
         return DNSConfigurationSnapshot(services: snapshots)
     }
 
-    private func restoreSystemDNSConfiguration(_ snapshot: DNSConfigurationSnapshot) throws {
+    private func restoreSystemDNSConfiguration(_ snapshot: DNSConfigurationSnapshot) async throws {
         guard !snapshot.services.isEmpty else { return }
 
         let commands = snapshot.services.map { serviceSnapshot in
@@ -1795,7 +1945,7 @@ final class TunnelController: ObservableObject {
                 return "/usr/sbin/networksetup -setdnsservers \(Self.shellQuote(serviceSnapshot.service)) Empty"
             }
         }
-        try Self.runPrivilegedShell(commands.joined(separator: "; "))
+        try await Self.runPrivilegedShell(commands.joined(separator: "; "))
     }
 
     private static func probe(url: URL, httpPort: Int, mode: AppConnectionMode) async throws {
@@ -1827,31 +1977,67 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    private static func runProcess(launchPath: String, arguments: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: launchPath)
-        process.arguments = arguments
+    private static func runProcess(launchPath: String, arguments: [String], timeout: TimeInterval = 8) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: launchPath)
+            process.arguments = arguments
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
 
-        try process.run()
-        process.waitUntilExit()
+            let stateLock = NSLock()
+            var finished = false
 
-        let output = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        if process.terminationStatus == 0 {
-            return output
+            func finish(_ result: Result<String, Error>) {
+                stateLock.lock()
+                defer { stateLock.unlock() }
+                guard !finished else { return }
+                finished = true
+                process.terminationHandler = nil
+                continuation.resume(with: result)
+            }
+
+            process.terminationHandler = { terminatedProcess in
+                let output = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                if terminatedProcess.terminationStatus == 0 {
+                    finish(.success(output))
+                    return
+                }
+
+                let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+                finish(.failure(NSError(
+                    domain: "TunnelController.Process",
+                    code: Int(terminatedProcess.terminationStatus),
+                    userInfo: [NSLocalizedDescriptionKey: errorText]
+                )))
+            }
+
+            do {
+                try process.run()
+            } catch {
+                finish(.failure(error))
+                return
+            }
+
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
+                guard process.isRunning else { return }
+                process.interrupt()
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2) {
+                    if process.isRunning {
+                        process.terminate()
+                    }
+                }
+                finish(.failure(NSError(
+                    domain: "TunnelController.Process",
+                    code: 408,
+                    userInfo: [NSLocalizedDescriptionKey: "Process timed out after \(Int(timeout))s: \(launchPath) \(arguments.joined(separator: " "))"]
+                )))
+            }
         }
-
-        let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
-        throw NSError(
-            domain: "TunnelController.Process",
-            code: Int(process.terminationStatus),
-            userInfo: [NSLocalizedDescriptionKey: errorText]
-        )
     }
 
     private static func shouldRetryTunnelStartupAfterManagerReset(_ error: Error) -> Bool {
@@ -1934,35 +2120,58 @@ final class TunnelController: ObservableObject {
     }
 
     @MainActor
-    private static func runPrivilegedShell(_ command: String) throws {
+    private static func runPrivilegedShell(_ command: String) async throws {
         guard let password = promptForPassword() else {
             throw TunnelControllerError.commandFailed(AppCopy(language: AppLanguageStore.shared.selectedLanguage).helperStartCancelled)
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        
-        let escapedPassword = password.replacingOccurrences(of: "'", with: "'\"'\"'")
-        let bashCommand = "echo '\(escapedPassword)' | sudo -S bash -c '\(command.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
-        process.arguments = ["-c", bashCommand]
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        try process.run()
-        process.waitUntilExit()
-
-        if process.terminationStatus != 0 {
-            let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
-            
-            if errorText.lowercased().contains("incorrect password") || errorText.lowercased().contains("try again") {
+        do {
+            try await runPrivilegedShell(command: command, password: password)
+        } catch {
+            let lowered = error.localizedDescription.lowercased()
+            if lowered.contains("incorrect password") || lowered.contains("try again") {
                 cachedAdminPassword = nil
                 throw TunnelControllerError.commandFailed(AppCopy(language: AppLanguageStore.shared.selectedLanguage).incorrectPassword)
             }
-            throw TunnelControllerError.commandFailed(errorText)
+            throw error
+        }
+    }
+
+    private static func runPrivilegedShell(command: String, password: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                
+                let escapedPassword = password.replacingOccurrences(of: "'", with: "'\"'\"'")
+                let bashCommand = "echo '\(escapedPassword)' | sudo -S bash -c '\(command.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+                process.arguments = ["-c", bashCommand]
+
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+
+                    if process.terminationStatus != 0 {
+                        let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+                        continuation.resume(throwing: NSError(
+                            domain: "TunnelController.Process",
+                            code: Int(process.terminationStatus),
+                            userInfo: [NSLocalizedDescriptionKey: errorText]
+                        ))
+                        return
+                    }
+
+                    continuation.resume(returning: ())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
@@ -2039,6 +2248,9 @@ final class TunnelController: ObservableObject {
 
     private static let helperPIDURL =
         helperSupportDirectoryURL.appendingPathComponent("proxy-helper.pid")
+
+    private static let diagnosticDumpURL =
+        helperSupportDirectoryURL.appendingPathComponent("last-diagnostic-dump.txt")
 
     private static func latestDerivedDataHelperBinaryURL() -> URL? {
         let derivedDataRoot = FileManager.default.homeDirectoryForCurrentUser

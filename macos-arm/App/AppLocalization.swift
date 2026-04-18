@@ -125,9 +125,9 @@ struct AppCopy {
     var connectionSubtitle: String {
         switch language {
         case .english:
-            return "Set the allowlist and VLESS config, then connect."
+            return "Set the allowlist and proxy config, then connect."
         case .persian:
-            return "فهرست مجاز و تنظیمات VLESS را وارد کن و بعد اتصال را بزن."
+            return "فهرست مجاز و تنظیمات پروکسی را وارد کن و بعد اتصال را بزن."
         }
     }
 
@@ -218,9 +218,9 @@ struct AppCopy {
     var vlessConfigTitle: String {
         switch language {
         case .english:
-            return "Step 2: VLESS Config"
+            return "Step 2: Proxy Config"
         case .persian:
-            return "مرحله 2: تنظیمات VLESS"
+            return "مرحله 2: تنظیمات پروکسی"
         }
     }
 
@@ -255,6 +255,14 @@ struct AppCopy {
 
     var connectTitle: String {
         language == .english ? "Connect" : "اتصال"
+    }
+
+    var connectingTitle: String {
+        language == .english ? "Connecting..." : "در حال اتصال..."
+    }
+
+    var disconnectingTitle: String {
+        language == .english ? "Disconnecting..." : "در حال قطع اتصال..."
     }
 
     var logsTitle: String {
@@ -312,6 +320,28 @@ struct AppCopy {
 
     var copyDiagnosticDumpLabel: String {
         language == .english ? "Copy Full Diagnostic Dump" : "کپی خروجی کامل عیب‌یابی"
+    }
+
+    var preparingDiagnosticDumpTitle: String {
+        language == .english ? "Preparing diagnostic dump..." : "در حال آماده‌سازی گزارش عیب‌یابی..."
+    }
+
+    func diagnosticDumpReadyTitle(path: String) -> String {
+        switch language {
+        case .english:
+            return "Diagnostic dump copied. Saved at \(path)"
+        case .persian:
+            return "گزارش عیب‌یابی کپی شد. مسیر ذخیره: \(path)"
+        }
+    }
+
+    func diagnosticDumpSavedTitle(path: String) -> String {
+        switch language {
+        case .english:
+            return "Diagnostic dump saved at \(path)"
+        case .persian:
+            return "گزارش عیب‌یابی در این مسیر ذخیره شد: \(path)"
+        }
     }
 
     var clearLogsLabel: String {
@@ -384,9 +414,9 @@ struct AppCopy {
         case (.whitelist, .persian):
             return "Allowlist"
         case (.vless, .english):
-            return "VLESS"
+            return "Config"
         case (.vless, .persian):
-            return "VLESS"
+            return "تنظیمات"
         case (.localProxy, .english):
             return "Local Proxy"
         case (.localProxy, .persian):
@@ -489,9 +519,9 @@ struct AppCopy {
     var validatingDetail: String {
         switch language {
         case .english:
-            return "Checking the allowlist and VLESS config..."
+            return "Checking the allowlist and proxy config..."
         case .persian:
-            return "در حال بررسی allowlist و تنظیمات VLESS..."
+            return "در حال بررسی allowlist و تنظیمات پروکسی..."
         }
     }
 
@@ -524,9 +554,9 @@ struct AppCopy {
     var xrayConnectingDetail: String {
         switch language {
         case .english:
-            return "The VLESS config is being converted into the Xray config and connected to the local helper."
+            return "The proxy config is being converted into the Xray config and connected to the local helper."
         case .persian:
-            return "تنظیمات VLESS در حال تبدیل به تنظیمات Xray و اتصال به helper محلی است."
+            return "تنظیمات پروکسی در حال تبدیل به تنظیمات Xray و اتصال به helper محلی است."
         }
     }
 
@@ -669,7 +699,7 @@ struct AppCopy {
     }
 
     var vlessParsingDetail: String {
-        language == .english ? "Parsing the VLESS config" : "در حال تجزیه تنظیمات VLESS"
+        language == .english ? "Parsing the proxy config" : "در حال تجزیه تنظیمات پروکسی"
     }
 
     var privilegedHelperRunning: String {

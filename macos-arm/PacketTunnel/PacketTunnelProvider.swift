@@ -40,7 +40,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     socksProxyPort: self.configuration.socksProxyPort,
                     logger: self.logger
                 ) { [weak self] status in
-                    self?.logger.info("Tunnel bridge status | phase=\(status.phase, privacy: .public) | packets=\(status.packetCount, privacy: .public) | detail=\(status.detail ?? "-", privacy: .public)")
+                self?.logger.info("Tunnel bridge status | phase=\(status.phase, privacy: .public) | packets=\(status.packetCount, privacy: .public) | detail=\(status.detail ?? "-", privacy: .public)")
+                self?.logger.info("Tunnel bridge traffic | up=\(status.bytesUploaded, privacy: .public) | down=\(status.bytesDownloaded, privacy: .public)")
                 }
                 self.bridge = bridge
                 bridge.start()
@@ -89,6 +90,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         return TunnelProviderStatus(
             phase: bridgeStatus?.phase ?? (startedAt == nil ? "idle" : "running"),
             packetCount: bridgeStatus?.packetCount ?? 0,
+            bytesUploaded: bridgeStatus?.bytesUploaded ?? 0,
+            bytesDownloaded: bridgeStatus?.bytesDownloaded ?? 0,
             connectIP: configuration.connectIP,
             connectPort: configuration.connectPort,
             fakeSNI: configuration.fakeSNI,

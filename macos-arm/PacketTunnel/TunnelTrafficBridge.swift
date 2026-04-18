@@ -6,6 +6,8 @@ import os
 struct TunnelTrafficBridgeStatus {
     var phase: String
     var packetCount: Int
+    var bytesUploaded: Int
+    var bytesDownloaded: Int
     var detail: String?
     var startedAtISO8601: String?
 }
@@ -21,6 +23,8 @@ final class TunnelTrafficBridge {
     private var tcpSessions: [TCPFlowKey: TCPFlowSession] = [:]
     private var udpSessions: [UDPFlowKey: UDPFlowSession] = [:]
     private var packetCount = 0
+    private var bytesUploaded = 0
+    private var bytesDownloaded = 0
     private var running = false
     private var startedAt = Date()
     private var lastDetail: String?
@@ -48,6 +52,8 @@ final class TunnelTrafficBridge {
             self.running = true
             self.startedAt = Date()
             self.packetCount = 0
+            self.bytesUploaded = 0
+            self.bytesDownloaded = 0
             self.lastDetail = "bridge starting"
             self.emitStatus(detailOverride: nil, force: true)
             self.logger.info("Tunnel bridge starting | proxy=127.0.0.1:\(self.httpProxyPort, privacy: .public)")
@@ -135,6 +141,13 @@ final class TunnelTrafficBridge {
                     httpProxyPort: httpProxyPort,
                     logger: logger,
                     stateQueue: DispatchQueue(label: "com.local.sni.macos.tunnel.bridge.tcp.\(UUID().uuidString)"),
+                    onTraffic: { [weak self] uploaded, downloaded in
+                        self?.stateQueue.async {
+                            self?.bytesUploaded += uploaded
+                            self?.bytesDownloaded += downloaded
+                            self?.emitStatus(detailOverride: nil, force: false)
+                        }
+                    },
                     onFinish: { [weak self] finishedKey in
                         self?.stateQueue.async {
                             self?.tcpSessions.removeValue(forKey: finishedKey)
@@ -185,6 +198,13 @@ final class TunnelTrafficBridge {
                 socksProxyPort: socksProxyPort,
                 logger: logger,
                 stateQueue: DispatchQueue(label: "com.local.sni.macos.tunnel.bridge.udp.\(UUID().uuidString)"),
+                onTraffic: { [weak self] uploaded, downloaded in
+                    self?.stateQueue.async {
+                        self?.bytesUploaded += uploaded
+                        self?.bytesDownloaded += downloaded
+                        self?.emitStatus(detailOverride: nil, force: false)
+                    }
+                },
                 onFinish: { [weak self] finishedKey in
                     self?.stateQueue.async {
                         self?.udpSessions.removeValue(forKey: finishedKey)
@@ -220,6 +240,8 @@ final class TunnelTrafficBridge {
         TunnelTrafficBridgeStatus(
             phase: running ? "running" : "stopped",
             packetCount: packetCount,
+            bytesUploaded: bytesUploaded,
+            bytesDownloaded: bytesDownloaded,
             detail: detailOverride ?? lastDetail ?? configuration.connectionMode.rawValue,
             startedAtISO8601: ISO8601DateFormatter().string(from: startedAt)
         )
@@ -263,6 +285,7 @@ private final class TCPFlowSession {
     private let httpProxyPort: Int
     private let logger: Logger
     private let stateQueue: DispatchQueue
+    private let onTraffic: (Int, Int) -> Void
     private let onFinish: (TCPFlowKey) -> Void
     private let onActivity: (String) -> Void
 
@@ -284,6 +307,7 @@ private final class TCPFlowSession {
         httpProxyPort: Int,
         logger: Logger,
         stateQueue: DispatchQueue,
+        onTraffic: @escaping (Int, Int) -> Void,
         onFinish: @escaping (TCPFlowKey) -> Void,
         onActivity: @escaping (String) -> Void
     ) {
@@ -293,6 +317,7 @@ private final class TCPFlowSession {
         self.httpProxyPort = httpProxyPort
         self.logger = logger
         self.stateQueue = stateQueue
+        self.onTraffic = onTraffic
         self.onFinish = onFinish
         self.onActivity = onActivity
         let initialServerSequence = Self.randomSequence()
@@ -506,6 +531,7 @@ private final class TCPFlowSession {
                     self.close()
                     return
                 }
+                self.onTraffic(data.count, 0)
                 self.onActivity("client data forwarded \(data.count) bytes")
             }
         })
@@ -531,6 +557,7 @@ private final class TCPFlowSession {
             serverSequence &+= UInt32(chunk.count)
             offset += chunkSize
         }
+        onTraffic(0, bytes.count)
         onActivity("upstream delivered \(bytes.count) bytes")
     }
 
@@ -638,6 +665,7 @@ private final class UDPFlowSession {
     private let socksProxyPort: Int
     private let logger: Logger
     private let stateQueue: DispatchQueue
+    private let onTraffic: (Int, Int) -> Void
     private let onFinish: (UDPFlowKey) -> Void
     private let onActivity: (String) -> Void
 
@@ -654,6 +682,7 @@ private final class UDPFlowSession {
         socksProxyPort: Int,
         logger: Logger,
         stateQueue: DispatchQueue,
+        onTraffic: @escaping (Int, Int) -> Void,
         onFinish: @escaping (UDPFlowKey) -> Void,
         onActivity: @escaping (String) -> Void
     ) {
@@ -663,6 +692,7 @@ private final class UDPFlowSession {
         self.socksProxyPort = socksProxyPort
         self.logger = logger
         self.stateQueue = stateQueue
+        self.onTraffic = onTraffic
         self.onFinish = onFinish
         self.onActivity = onActivity
     }
@@ -850,6 +880,7 @@ private final class UDPFlowSession {
                     self.close()
                     return
                 }
+                self.onTraffic(payload.count, 0)
                 self.onActivity("udp payload forwarded \(payload.count) bytes")
             }
         })
@@ -892,6 +923,7 @@ private final class UDPFlowSession {
             return
         }
         packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
+        onTraffic(0, response.payload.count)
         onActivity("udp upstream delivered \(response.payload.count) bytes")
     }
 

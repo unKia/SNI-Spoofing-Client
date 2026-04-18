@@ -57,17 +57,13 @@ class XrayManager: ObservableObject {
         try FileManager.default.copyItem(at: bundledXrayURL, to: xrayBinaryURL)
         
         // Make binary executable
-        let chmod = Process()
-        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
-        chmod.arguments = ["+x", xrayBinaryURL.path]
-        try chmod.run()
-        chmod.waitUntilExit()
+        _ = try await Self.runProcess(launchPath: "/bin/chmod", arguments: ["+x", xrayBinaryURL.path])
         await MainActor.run {
             self.lastStatusMessage = "Xray binary prepared"
         }
     }
     
-    func start(configString: String) throws {
+    func start(configString: String) async throws {
         stop()
         
         try configString.write(to: xrayConfigURL, atomically: true, encoding: .utf8)
@@ -92,7 +88,7 @@ class XrayManager: ObservableObject {
 
         // If Xray exits immediately, surface the startup error instead of silently
         // continuing with the native helper only.
-        Thread.sleep(forTimeInterval: 0.7)
+        try await Task.sleep(nanoseconds: 700_000_000)
         if !process.isRunning {
             pipe.fileHandleForReading.readabilityHandler = nil
             let output = drainOutput(from: pipe).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,7 +116,6 @@ class XrayManager: ObservableObject {
     func stop() {
         if let process = xrayProcess, process.isRunning {
             process.terminate()
-            process.waitUntilExit()
         }
         xrayProcess = nil
         DispatchQueue.main.async {
@@ -153,5 +148,41 @@ class XrayManager: ObservableObject {
         outputLock.lock()
         defer { outputLock.unlock() }
         return recentOutput
+    }
+
+    private static func runProcess(launchPath: String, arguments: [String]) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: launchPath)
+                process.arguments = arguments
+
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+
+                    let output = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                    if process.terminationStatus == 0 {
+                        continuation.resume(returning: output)
+                        return
+                    }
+
+                    let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+                    continuation.resume(throwing: NSError(
+                        domain: "XrayManager.Process",
+                        code: Int(process.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: errorText]
+                    ))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }

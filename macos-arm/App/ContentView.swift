@@ -46,6 +46,8 @@ struct ContentView: View {
     @State private var isDetailsHovered = false
     @State private var isWorkflowHovered = false
     @State private var isVlessMasked = true
+    @State private var isPreparingDiagnosticDump = false
+    @State private var diagnosticDumpStatusMessage = ""
 
     private var visibleLogEntries: [ProxyLogEntry] {
         tunnelController.helperLogEntries.filter { selectedLogFilter.matches($0) }
@@ -114,7 +116,9 @@ struct ContentView: View {
             logsSheet
         }
         .onChange(of: tunnelController.configuration.logLevel) { _, _ in
-            tunnelController.applyLogLevelChangeImmediately()
+            Task {
+                await tunnelController.applyLogLevelChangeImmediately()
+            }
         }
         .onChange(of: languageStore.selectedLanguage) { _, _ in
             isLanguageMenuExpanded = false
@@ -275,7 +279,7 @@ struct ContentView: View {
                     }
                 }
 
-                if tunnelController.isConnected || tunnelController.isPrivilegedHelperRunning {
+                if tunnelController.isConnected {
                     ActiveProxyStatsView()
                 }
 
@@ -307,21 +311,19 @@ struct ContentView: View {
                     workflowSection
                 }
 
-                if tunnelController.isBusy {
-                    Label(copy.workingTitle, systemImage: "hourglass")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.textSecondary)
-                }
 
                 if !tunnelController.lastErrorDescription.isEmpty {
                     errorBanner(tunnelController.lastErrorDescription)
                 }
 
                 HStack(spacing: 12) {
+                    let connectionAction = connectionActionPresentation()
                     actionButton(
-                        title: tunnelController.isConnected ? copy.disconnectTitle : copy.connectTitle,
-                        systemImage: tunnelController.isConnected ? "stop.fill" : "play.fill",
+                        title: connectionAction.title,
+                        systemImage: connectionAction.systemImage,
                         emphasis: .primary,
+                        isBusy: connectionAction.isBusy,
+                        isEnabled: !tunnelController.isBusy,
                         action: tunnelController.isConnected
                             ? tunnelController.disconnectEmbeddedFlow
                             : tunnelController.connectEmbeddedFlow
@@ -518,6 +520,8 @@ struct ContentView: View {
                         compactIconButton(
                             systemImage: "doc.richtext",
                             accessibilityLabel: copy.copyDiagnosticDumpLabel,
+                            isBusy: isPreparingDiagnosticDump,
+                            isEnabled: !isPreparingDiagnosticDump,
                             action: copyDiagnosticDump
                         )
 
@@ -530,6 +534,13 @@ struct ContentView: View {
                     .fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                if !diagnosticDumpStatusMessage.isEmpty {
+                    Text(diagnosticDumpStatusMessage)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 CleanCard {
                     ScrollView {
@@ -716,24 +727,35 @@ struct ContentView: View {
     private func compactIconButton(
         systemImage: String,
         accessibilityLabel: String,
+        isBusy: Bool = false,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(Color.textPrimary)
-                .frame(width: 44, height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.inputBorder, lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white)
+
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.textPrimary)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.textPrimary)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.inputBorder, lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+            .opacity(isEnabled ? 1 : 0.6)
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
         .help(accessibilityLabel)
     }
 
@@ -746,16 +768,55 @@ struct ContentView: View {
             "[\(entry.level.rawValue.uppercased())] \(formatter.string(from: entry.timestamp)) \(entry.message)"
         }.joined(separator: "\n")
 
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        guard copyTextToPasteboard(text) else {
+            tunnelController.noteVisibleLogsCopyFailed()
+            return
+        }
+        tunnelController.noteVisibleLogsCopied()
     }
 
     private func copyDiagnosticDump() {
-        let text = tunnelController.diagnosticDump()
+        Task { @MainActor in
+            guard !isPreparingDiagnosticDump else {
+                return
+            }
+
+            isPreparingDiagnosticDump = true
+            diagnosticDumpStatusMessage = copy.preparingDiagnosticDumpTitle
+            defer {
+                isPreparingDiagnosticDump = false
+            }
+
+            do {
+                let artifact = try await tunnelController.prepareDiagnosticDumpArtifact()
+                if copyTextToPasteboard(artifact.text) {
+                    diagnosticDumpStatusMessage = copy.diagnosticDumpReadyTitle(path: artifact.fileURL.path)
+                    tunnelController.noteDiagnosticDumpCopied(byteCount: artifact.text.utf8.count, path: artifact.fileURL.path)
+                    return
+                }
+
+                diagnosticDumpStatusMessage = copy.diagnosticDumpSavedTitle(path: artifact.fileURL.path)
+                tunnelController.noteDiagnosticDumpCopyFailed(path: artifact.fileURL.path)
+            } catch {
+                diagnosticDumpStatusMessage = error.localizedDescription
+                tunnelController.failDiagnosticDumpPreparation(error.localizedDescription)
+            }
+        }
+    }
+
+    @discardableResult
+    private func copyTextToPasteboard(_ text: String) -> Bool {
         let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        if pasteboard.clearContents() != 0 && pasteboard.setString(text, forType: .string) {
+            return true
+        }
+
+        _ = pasteboard.declareTypes([.string], owner: nil)
+        if pasteboard.setString(text, forType: .string) {
+            return true
+        }
+
+        return pasteboard.writeObjects([text as NSString])
     }
 
     
@@ -763,27 +824,38 @@ struct ContentView: View {
         guard !input.isEmpty else { return Text("") }
         
         var masked = input
-        
-        // Mask UUID (between vless:// and @)
-        if let vlessRange = masked.range(of: "vless://"),
-           let atRange = masked.range(of: "@"),
-           vlessRange.upperBound < atRange.lowerBound {
-            let uuidRange = vlessRange.upperBound..<atRange.lowerBound
-            masked.replaceSubrange(uuidRange, with: "••••••••-••••-••••-••••-••••••••••••")
+
+        let lowercased = masked.lowercased()
+        if lowercased.hasPrefix("vmess://"),
+           let schemeRange = masked.range(of: "://") {
+            let prefix = masked[..<schemeRange.upperBound]
+            return Text("\(prefix)••••••••••")
         }
-        
-        // Mask Host and SNI
-        let sensitiveKeys = ["host=", "sni="]
+
+        if lowercased.hasPrefix("ss://"),
+           !masked.contains("@"),
+           let schemeRange = masked.range(of: "://") {
+            let prefix = masked[..<schemeRange.upperBound]
+            return Text("\(prefix)••••••••••")
+        }
+
+        if let schemeRange = masked.range(of: "://"),
+           let atRange = masked[schemeRange.upperBound...].range(of: "@") {
+            let valueRange = schemeRange.upperBound..<atRange.lowerBound
+            masked.replaceSubrange(valueRange, with: "••••••••••")
+        }
+
+        let sensitiveKeys = ["host=", "sni=", "password=", "pass=", "method=", "pbk=", "sid="]
         for key in sensitiveKeys {
             if let keyRange = masked.range(of: key) {
                 let valueStart = keyRange.upperBound
                 let valueEnd = masked[valueStart...].firstIndex(where: { $0 == "&" || $0 == "#" || $0 == " " }) ?? masked.endIndex
                 if valueStart < valueEnd {
-                    masked.replaceSubrange(valueStart..<valueEnd, with: "••••••••••••")
+                    masked.replaceSubrange(valueStart..<valueEnd, with: "••••••••••")
                 }
             }
         }
-        
+
         return Text(masked)
     }
 
@@ -811,14 +883,45 @@ struct ContentView: View {
         title: String,
         systemImage: String,
         emphasis: ButtonEmphasis,
+        isBusy: Bool = false,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 10) {
+                if isBusy {
+                    let busyColor = tunnelController.isConnected ? Color(red: 148/255, green: 163/255, blue: 184/255) : Color(red: 96/255, green: 165/255, blue: 250/255)
+                    busySpinnerGlyph(tint: busyColor)
+                } else {
+                    Image(systemName: systemImage)
+                }
+
+                Text(title)
+            }
+            .font(.system(size: 16, weight: .bold, design: .rounded))
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(CleanButtonStyle(emphasis: emphasis))
+        .buttonStyle(CleanButtonStyle(
+            emphasis: emphasis,
+            isBusy: isBusy,
+            busyTint: tunnelController.isConnected ? Color(red: 148/255, green: 163/255, blue: 184/255) : Color(red: 96/255, green: 165/255, blue: 250/255)
+        ))
+        .disabled(!isEnabled)
+    }
+
+    private func connectionActionPresentation() -> (title: String, systemImage: String, isBusy: Bool) {
+        if tunnelController.isBusy {
+            if tunnelController.isConnected {
+                return (copy.disconnectingTitle, "stop.fill", true)
+            }
+            return (copy.connectingTitle, "play.fill", true)
+        }
+
+        if tunnelController.isConnected {
+            return (copy.disconnectTitle, "stop.fill", false)
+        }
+
+        return (copy.connectTitle, "play.fill", false)
     }
 
     private func statusBadge() -> some View {
@@ -976,6 +1079,38 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
             }
             .frame(width: 28, height: 28)
+        }
+    }
+
+    private func busySpinnerGlyph(tint: Color) -> some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate
+            let wave = 0.5 + 0.5 * sin(phase * 2.8)
+            let rotation = phase * 220.0
+
+            ZStack {
+                Circle()
+                    .stroke(tint.opacity(0.24 - (wave * 0.18)), lineWidth: 1.8)
+                    .scaleEffect(1.08 + wave * 0.3)
+                    .opacity(1.0 - wave * 0.75)
+
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [tint, tint.opacity(0.82)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: tint.opacity(0.35), radius: 6, x: 0, y: 2)
+
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .frame(width: 13, height: 13)
+                    .rotationEffect(.degrees(rotation))
+            }
+            .frame(width: 22, height: 22)
         }
     }
 
@@ -1176,6 +1311,9 @@ private enum ButtonEmphasis {
 
 private struct CleanButtonStyle: ButtonStyle {
     let emphasis: ButtonEmphasis
+    let isBusy: Bool
+    let busyTint: Color
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1188,16 +1326,47 @@ private struct CleanButtonStyle: ButtonStyle {
                     .stroke(borderColor(for: emphasis), lineWidth: 1)
             )
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .opacity(configuration.isPressed ? 0.92 : 1)
+            .opacity(buttonOpacity(isPressed: configuration.isPressed))
+            .saturation(isEnabled || isBusy ? 1 : 0.2)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isEnabled)
+            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isBusy)
     }
 
+    @ViewBuilder
     private func background(configuration: Configuration) -> some View {
-        let opacity = configuration.isPressed ? 0.9 : 1.0
+        if isBusy {
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                let phase = timeline.date.timeIntervalSinceReferenceDate
+                let pulse = 0.5 + 0.5 * sin(phase * 2.2)
+                
+                // Flowing gradient for a smoother look
+                let colorA = busyTint.opacity(0.92)
+                let colorB = busyTint.opacity(0.78)
+                let startPoint = UnitPoint(x: 0.5 + 0.5 * cos(phase * 1.5), y: 0.5 + 0.5 * sin(phase * 1.5))
+                let endPoint = UnitPoint(x: 0.5 - 0.5 * cos(phase * 1.5), y: 0.5 - 0.5 * sin(phase * 1.5))
 
-        return RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(fillColor(for: emphasis).opacity(opacity))
-            .shadow(color: emphasis == .primary ? Color.primaryButton.opacity(0.2) : Color.clear, radius: 8, x: 0, y: 4)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [colorA, colorB, colorA],
+                            startPoint: startPoint,
+                            endPoint: endPoint
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.12 + pulse * 0.12), lineWidth: 1.0)
+                    )
+                    .shadow(color: busyTint.opacity(0.22 + pulse * 0.1), radius: 8 + pulse * 4, x: 0, y: 4)
+            }
+        } else {
+            let opacity = isEnabled ? (configuration.isPressed ? 0.9 : 1.0) : 0.72
+
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(fillColor(for: emphasis).opacity(opacity))
+                .shadow(color: emphasis == .primary && isEnabled ? Color.primaryButton.opacity(0.2) : Color.clear, radius: 8, x: 0, y: 4)
+        }
     }
 
     private func fillColor(for emphasis: ButtonEmphasis) -> Color {
@@ -1212,6 +1381,10 @@ private struct CleanButtonStyle: ButtonStyle {
     }
     
     private func textColor(for emphasis: ButtonEmphasis) -> Color {
+        if isBusy {
+            return .white
+        }
+
         switch emphasis {
         case .primary:
             return .white
@@ -1223,6 +1396,10 @@ private struct CleanButtonStyle: ButtonStyle {
     }
     
     private func borderColor(for emphasis: ButtonEmphasis) -> Color {
+        if isBusy {
+            return Color.white.opacity(0.08)
+        }
+
         switch emphasis {
         case .primary:
             return .clear
@@ -1231,6 +1408,16 @@ private struct CleanButtonStyle: ButtonStyle {
         case .ghost:
             return .clear
         }
+    }
+
+    private func buttonOpacity(isPressed: Bool) -> Double {
+        if isBusy {
+            return isPressed ? 0.95 : 1
+        }
+        if isEnabled {
+            return isPressed ? 0.92 : 1
+        }
+        return 0.55
     }
 }
 
@@ -1334,40 +1521,14 @@ struct LiveTrafficIcon: View {
     let speed: Int
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate
-            // Animation speed scales with traffic speed (max out at a reasonable visual rate)
-            let baseSpeed = 1.5
-            let trafficFactor = min(Double(speed) / 500_000.0, 5.0) // Scale up to 500KB/s
-            let totalSpeed = baseSpeed + trafficFactor
-            
-            let offset = (phase * totalSpeed).truncatingRemainder(dividingBy: 1.0)
-            
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.12))
-                    .frame(width: 28, height: 28)
-                
-                // Animated arrows flowing
-                VStack(spacing: -4) {
-                    ForEach(0..<2) { i in
-                        Image(systemName: icon)
-                            .font(.system(size: 11, weight: .black))
-                            .foregroundStyle(color)
-                            .offset(y: CGFloat((Double(i) - offset) * 12))
-                            .opacity(opacity(for: Double(i) - offset))
-                    }
-                }
-                .frame(width: 20, height: 18)
-                .clipped()
-            }
-        }
-    }
+        ZStack {
+            Circle()
+                .fill(color.opacity(0.12))
+                .frame(width: 28, height: 28)
 
-    private func opacity(for offset: Double) -> Double {
-        // Fade in at top, fade out at bottom
-        if offset < 0 { return 1.0 + offset }
-        if offset > 1.0 { return 2.0 - offset }
-        return 1.0
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(color)
+        }
     }
 }

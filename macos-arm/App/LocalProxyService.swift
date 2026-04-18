@@ -55,6 +55,7 @@ final class LocalProxyService {
     private var previousSessionsBytesUploaded: Int = 0
     private var previousSessionsBytesDownloaded: Int = 0
     private var statusTimer: DispatchSourceTimer?
+    private var lastTrafficStatusEmission = Date.distantPast
 
     init(statusHandler: @escaping @Sendable (NativeProxyStatus) -> Void) {
         self.statusHandler = statusHandler
@@ -114,6 +115,7 @@ final class LocalProxyService {
                 lastDetail = "Listener started on \(configuration.listenHost):\(configuration.listenPort)"
             }
             lastLogLevel = .info
+            lastTrafficStatusEmission = .distantPast
             emitStatusLocked(phase: "starting")
 
             let thread = Thread { [weak self] in
@@ -151,8 +153,9 @@ final class LocalProxyService {
         let sessions = Array(activeSessions.values)
         activeSessions.removeAll()
         sessions.forEach { 
-            previousSessionsBytesUploaded += $0.bytesUploaded
-            previousSessionsBytesDownloaded += $0.bytesDownloaded
+            let snapshot = $0.trafficSnapshot()
+            previousSessionsBytesUploaded += snapshot.uploaded
+            previousSessionsBytesDownloaded += snapshot.downloaded
             $0.stop() 
         }
         lastLogLevel = .info
@@ -210,6 +213,10 @@ final class LocalProxyService {
                     self?.lastDetail = "Session finished"
                     self?.emitStatusLocked(phase: self?.running == true ? "running" : "stopped")
                 }
+            } onTraffic: { [weak self] in
+                self?.syncQueue.async {
+                    self?.emitTrafficStatusIfNeededLocked(phase: "running")
+                }
             }
 
             syncQueue.sync {
@@ -234,8 +241,9 @@ final class LocalProxyService {
         var up = previousSessionsBytesUploaded
         var down = previousSessionsBytesDownloaded
         for session in activeSessions.values {
-            up += session.bytesUploaded
-            down += session.bytesDownloaded
+            let snapshot = session.trafficSnapshot()
+            up += snapshot.uploaded
+            down += snapshot.downloaded
         }
         
         statusHandler(
@@ -250,6 +258,15 @@ final class LocalProxyService {
                 detail: lastDetail
             )
         )
+    }
+
+    private func emitTrafficStatusIfNeededLocked(phase: String) {
+        let now = Date()
+        guard now.timeIntervalSince(lastTrafficStatusEmission) >= 0.25 else {
+            return
+        }
+        lastTrafficStatusEmission = now
+        emitStatusLocked(phase: phase)
     }
 
     private func configureSocket(_ fd: Int32) throws {
@@ -267,25 +284,29 @@ private final class ProxyClientSession {
     private let preferredEgressInterface: ResolvedInterface?
     private let statusHandler: (ResolvedInterface?, ProxyLogLevel, String) -> Void
     private let onFinish: (UUID, Int, Int) -> Void
+    private let onTraffic: () -> Void
     private let queue = DispatchQueue(label: "com.local.sni.macos.session", qos: .userInitiated)
     private let lock = NSLock()
+    private let trafficLock = NSLock()
     private var stopped = false
     private var outgoingFD: Int32 = -1
-    private(set) var bytesUploaded: Int = 0
-    private(set) var bytesDownloaded: Int = 0
+    private var bytesUploaded: Int = 0
+    private var bytesDownloaded: Int = 0
 
     init(
         incomingFD: Int32,
         configuration: TunnelConfiguration,
         preferredEgressInterface: ResolvedInterface?,
         statusHandler: @escaping (ResolvedInterface?, ProxyLogLevel, String) -> Void,
-        onFinish: @escaping (UUID, Int, Int) -> Void
+        onFinish: @escaping (UUID, Int, Int) -> Void,
+        onTraffic: @escaping () -> Void
     ) {
         self.incomingFD = incomingFD
         self.configuration = configuration
         self.preferredEgressInterface = preferredEgressInterface
         self.statusHandler = statusHandler
         self.onFinish = onFinish
+        self.onTraffic = onTraffic
     }
 
     func start() {
@@ -308,10 +329,17 @@ private final class ProxyClientSession {
         }
     }
 
+    func trafficSnapshot() -> (uploaded: Int, downloaded: Int) {
+        trafficLock.lock()
+        defer { trafficLock.unlock() }
+        return (bytesUploaded, bytesDownloaded)
+    }
+
     private func run() {
         defer {
             stop()
-            onFinish(id, bytesUploaded, bytesDownloaded)
+            let snapshot = trafficSnapshot()
+            onFinish(id, snapshot.uploaded, snapshot.downloaded)
         }
 
         do {
@@ -441,10 +469,15 @@ private final class ProxyClientSession {
             }
             
             if isUpload {
+                trafficLock.lock()
                 bytesUploaded += received
+                trafficLock.unlock()
             } else {
+                trafficLock.lock()
                 bytesDownloaded += received
+                trafficLock.unlock()
             }
+            onTraffic()
         }
     }
 

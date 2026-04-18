@@ -20,8 +20,21 @@ struct SniProxyHelperMain {
             print("logLevel=\(configuration.logLevel.rawValue)")
 
             let semaphore = DispatchSemaphore(value: 0)
+            var lastPrintedProxySnapshot: (phase: String, connections: Int, up: Int, down: Int)?
             let service = LocalProxyService { status in
-                guard status.logLevel.priority >= configuration.logLevel.priority else {
+                let previousSnapshot = lastPrintedProxySnapshot
+                let shouldEmitProxyStatus: Bool
+                if let previousSnapshot {
+                    shouldEmitProxyStatus =
+                        previousSnapshot.phase != status.phase ||
+                        previousSnapshot.connections != status.activeConnections ||
+                        previousSnapshot.up != status.bytesUploaded ||
+                        previousSnapshot.down != status.bytesDownloaded
+                } else {
+                    shouldEmitProxyStatus = true
+                }
+
+                guard shouldEmitProxyStatus || status.logLevel.priority >= configuration.logLevel.priority else {
                     return
                 }
                 let detail = status.detail ?? "-"
@@ -33,6 +46,12 @@ struct SniProxyHelperMain {
                 }
                 print("[\(status.logLevel.rawValue)] [proxy] phase=\(status.phase) connections=\(status.activeConnections) bytesUp=\(status.bytesUploaded) bytesDown=\(status.bytesDownloaded) iface=\(interfaceText) detail=\(detail)")
                 fflush(stdout)
+                lastPrintedProxySnapshot = (
+                    phase: status.phase,
+                    connections: status.activeConnections,
+                    up: status.bytesUploaded,
+                    down: status.bytesDownloaded
+                )
             }
 
             signal(SIGINT, SIG_IGN)

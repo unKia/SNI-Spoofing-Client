@@ -12,6 +12,8 @@ struct TunnelAppMessage: Codable {
 struct TunnelProviderStatus: Codable, Equatable {
     var phase: String
     var packetCount: Int
+    var bytesUploaded: Int
+    var bytesDownloaded: Int
     var connectIP: String
     var connectPort: Int
     var fakeSNI: String
