@@ -68,12 +68,6 @@ For end users:
 4. Launch the app.
 5. Grant any required macOS permissions when prompted.
 
-### Screenshots
-
-Current UI preview:
-
-![SNI-Spoofing Client screenshot](docs/screenshots/app-overview-v1.2.1.jpeg)
-
 ### Build From Source
 
 ```bash
@@ -170,12 +164,6 @@ SNI-Spoofing Client یک اپلیکیشن native برای macOS است که بر
 3. اپ را به پوشه `Applications` بکشید.
 4. برنامه را اجرا کنید.
 5. اگر macOS مجوز خواست، آن‌ها را تأیید کنید.
-
-### اسکرین‌شات‌ها
-
-نمای فعلی رابط کاربری:
-
-![SNI-Spoofing Client screenshot](docs/screenshots/app-overview-v1.2.1.jpeg)
 
 ### بیلد از سورس
 
