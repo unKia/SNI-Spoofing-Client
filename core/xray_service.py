@@ -51,11 +51,20 @@ class XrayService:
         output_path = temp_dir / "xray.log"
         config_path.write_text(config_text, encoding="utf-8")
         log_handle = output_path.open("w", encoding="utf-8")
+        creationflags = 0
+        startupinfo = None
+        if sys.platform == "win32":
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
         process = subprocess.Popen(
             [executable, "run", "-c", str(config_path)],
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             text=True,
+            creationflags=creationflags,
+            startupinfo=startupinfo,
         )
         self._process = process
         self._config_path = config_path

@@ -66,6 +66,7 @@ class AppRuntime:
         self._lock = threading.RLock()
         self._telemetry_lock = threading.RLock()
         self._thread: threading.Thread | None = None
+        self._startup_thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task | None = None
         self._server: SniSpoofingServer | None = None
@@ -257,14 +258,41 @@ class AppRuntime:
             self._route_summary = "Manual proxy only | system settings unchanged"
             self._set_step(WorkflowStepKey.SYSTEM_ROUTE, WorkflowStepState.SKIPPED, "Manual proxy mode")
 
+        self._headline = f"SOCKS 127.0.0.1:{self.fixed_socks_port} | HTTP 127.0.0.1:{self.fixed_http_port}"
+        self._detail = "Xray + local bypass stack is active. App traffic can route through the generated local proxies."
         self._set_step(WorkflowStepKey.PROBE, WorkflowStepState.RUNNING, "Testing internet access through the local HTTP proxy")
-        probe_url = probe_via_local_http_proxy(self.fixed_http_port)
+        try:
+            probe_url = probe_via_local_http_proxy(self.fixed_http_port)
+        except ConnectivityProbeError as exc:
+            self._probe_summary = str(exc)
+            self._set_step(WorkflowStepKey.PROBE, WorkflowStepState.FAILURE, self._probe_summary)
+            self._emit("error", f"Connectivity probe failed: {exc}")
+            self._detail = (
+                "Local proxies are up, but the built-in connectivity probe failed. Manual app testing is still possible."
+            )
+            return
+
         self._set_step(WorkflowStepKey.PROBE, WorkflowStepState.SUCCESS, f"Probe success: {probe_url}")
         self._probe_summary = probe_url
-        self._headline = f"SOCKS 127.0.0.1:{self.fixed_socks_port} | HTTP 127.0.0.1:{self.fixed_http_port}"
-        self._detail = (
-            "Xray + local bypass stack is active. App traffic can route through the generated local proxies."
-        )
+
+    def _run_startup_stack(self) -> None:
+        try:
+            self._start_proxy_stack()
+        except (ProxyLinkError, RuntimeError, XrayServiceError, SystemProxyError) as exc:
+            self._last_error = str(exc)
+            self._headline = "Connection Failed"
+            self._detail = self._last_error
+            self._set_state(RuntimeState.ERROR, self._last_error)
+            self._emit("error", self._last_error)
+            self._set_step(WorkflowStepKey.PROBE, WorkflowStepState.FAILURE, self._last_error)
+            self.stop()
+        finally:
+            with self._lock:
+                self._startup_thread = None
+
+    @staticmethod
+    def _is_expected_shutdown_error(exc: Exception) -> bool:
+        return isinstance(exc, OSError) and getattr(exc, "winerror", None) == 995
 
     def start(self) -> None:
         with self._lock:
@@ -331,17 +359,8 @@ class AppRuntime:
             )
             self._thread = threading.Thread(target=self._run_server, name="SNI Runtime", daemon=True)
             self._thread.start()
-            try:
-                self._start_proxy_stack()
-            except (ProxyLinkError, RuntimeError, XrayServiceError, SystemProxyError, ConnectivityProbeError) as exc:
-                self._last_error = str(exc)
-                self._headline = "Connection Failed"
-                self._detail = self._last_error
-                self._set_state(RuntimeState.ERROR, self._last_error)
-                self._emit("error", self._last_error)
-                self._set_step(WorkflowStepKey.PROBE, WorkflowStepState.FAILURE, self._last_error)
-                self.stop()
-                return
+            self._startup_thread = threading.Thread(target=self._run_startup_stack, name="SNI Startup", daemon=True)
+            self._startup_thread.start()
 
     def _run_server(self) -> None:
         loop = asyncio.new_event_loop()
@@ -357,12 +376,15 @@ class AppRuntime:
         except asyncio.CancelledError:
             pass
         except Exception as exc:  # pragma: no cover - runtime surface
-            self._last_error = f"{type(exc).__name__}: {exc}"
-            self._headline = "Connection Failed"
-            self._detail = self._last_error
-            self._set_state(RuntimeState.ERROR, self._last_error)
-            self._emit("error", self._last_error)
-            self._set_step(WorkflowStepKey.LOCAL_PROXY, WorkflowStepState.FAILURE, self._last_error)
+            if self._is_expected_shutdown_error(exc) and self._state in {RuntimeState.STOPPING, RuntimeState.ERROR}:
+                pass
+            else:
+                self._last_error = f"{type(exc).__name__}: {exc}"
+                self._headline = "Connection Failed"
+                self._detail = self._last_error
+                self._set_state(RuntimeState.ERROR, self._last_error)
+                self._emit("error", self._last_error)
+                self._set_step(WorkflowStepKey.LOCAL_PROXY, WorkflowStepState.FAILURE, self._last_error)
         finally:
             try:
                 self._system_proxy_manager.disable()
@@ -382,6 +404,7 @@ class AppRuntime:
                 self._server = None
                 self._backend = None
                 self._thread = None
+                self._startup_thread = None
                 if self._state != RuntimeState.ERROR:
                     self._set_state(RuntimeState.STOPPED, "Ready")
                     self._headline = "Ready"
