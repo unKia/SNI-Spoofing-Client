@@ -1,3 +1,8 @@
+param(
+  [switch]$RunAfterBuild,
+  [switch]$RunAsAdmin
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -49,3 +54,15 @@ if (Get-Command python.exe -ErrorAction SilentlyContinue) {
   --hidden-import pydivert `
   --add-data "resources/windows;resources/windows" `
   main.py
+
+$builtExe = Join-Path (Get-Location) "dist\SNI-Spoofing\SNI-Spoofing.exe"
+if ($RunAfterBuild) {
+  if (-not (Test-Path $builtExe)) {
+    throw "Build finished but executable was not found at $builtExe"
+  }
+  if ($RunAsAdmin) {
+    Start-Process -FilePath $builtExe -Verb RunAs
+  } else {
+    Start-Process -FilePath $builtExe
+  }
+}
