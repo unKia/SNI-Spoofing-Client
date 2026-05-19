@@ -137,10 +137,11 @@ class SniSpoofingServer:
             await connection.wait_until_ready(timeout=2)
             self._emit_log("debug", f"Bypass handshake ack received | local_port={src_port}")
         except Exception as exc:
+            diagnostic_state = getattr(connection, "diagnostic_state", lambda: "diagnostic_state=unavailable")()
             self._emit_log(
                 "error",
                 f"Bypass handshake failed | local_port={src_port} target={self.config.connect_ip}:{self.config.connect_port} "
-                f"reason={type(exc).__name__}: {exc}",
+                f"reason={type(exc).__name__}: {exc} | {diagnostic_state}",
             )
             self.backend.unregister_connection(connection)
             outgoing_sock.close()
@@ -162,6 +163,9 @@ class SniSpoofingServer:
     async def serve_forever(self) -> None:
         self.backend.start(self.interface_ipv4, self.config.connect_ip)
         self._emit_log("info", f"Bypass backend started on {self.interface_ipv4} -> {self.config.connect_ip}")
+        backend_diagnostic = getattr(self.backend, "diagnostic_summary", lambda: "")()
+        if backend_diagnostic:
+            self._emit_log("debug", f"Bypass backend diagnostic | {backend_diagnostic}")
 
         mother_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._mother_sock = mother_sock

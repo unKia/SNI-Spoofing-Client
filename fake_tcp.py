@@ -35,6 +35,13 @@ class FakeInjectiveConnection(MonitorConnection):
             return
         raise RuntimeError(self.t2a_msg or "fake handshake failed")
 
+    def diagnostic_state(self) -> str:
+        return (
+            f"syn_seq={self.syn_seq} syn_ack_seq={self.syn_ack_seq} "
+            f"scheduled_fake={self.sch_fake_sent} fake_sent={self.fake_sent} "
+            f"monitor={self.monitor} t2a_msg={self.t2a_msg or '-'}"
+        )
+
 
 class FakeTcpInjector(TcpInjector):
 

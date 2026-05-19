@@ -4,8 +4,10 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+import platform
 import queue
 import socket
+import sys
 import threading
 import time
 from typing import Iterable
@@ -300,6 +302,14 @@ class AppRuntime:
     def _is_expected_shutdown_error(exc: Exception) -> bool:
         return isinstance(exc, OSError) and getattr(exc, "winerror", None) == 995
 
+    @staticmethod
+    def _environment_summary() -> str:
+        return (
+            f"os={platform.platform()} machine={platform.machine()} "
+            f"processor={platform.processor() or '-'} python={platform.python_version()} "
+            f"python_bits={64 if sys.maxsize > 2**32 else 32}"
+        )
+
     def start(self) -> None:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
@@ -347,6 +357,12 @@ class AppRuntime:
             self._proxy_link_profile = proxy_link_profile
             self._backend = backend
             self._server = server
+            self._emit("debug", f"Runtime environment | {self._environment_summary()}")
+            if sys.platform == "win32" and platform.machine().lower() in {"arm64", "aarch64"}:
+                self._emit(
+                    "error",
+                    "Windows ARM64 detected. windows-pydivert depends on WinDivert packet capture/injection and may not work reliably in ARM/VM environments.",
+                )
             self._active_summary = f"Proxy: {self._config.whitelist_domain} -> {self._config.whitelist_ip}:{self._config.whitelist_port}"
             self._route_summary = "-"
             self._set_step(
@@ -466,6 +482,7 @@ class AppRuntime:
             f"Proxy mode: {self._config.connection_mode}",
             f"System proxy automation: {self._config.enable_system_proxy}",
             f"Backend: {self._config.selected_backend()}",
+            f"Environment: {self._environment_summary()}",
             f"Listen: {self._config.listen_host}:{self._config.listen_port}",
             f"Whitelist: {self._config.whitelist_domain} -> {self._config.whitelist_ip}:{self._config.whitelist_port}",
             f"Last error: {self._last_error or '-'}",

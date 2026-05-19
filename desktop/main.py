@@ -192,7 +192,8 @@ QPushButton#FlagButton {
     border-radius: 28px;
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    font-size: 27px;
+    font-size: 16px;
+    font-weight: 900;
     padding: 0;
 }
 QPushButton#IconButton {
@@ -204,7 +205,8 @@ QPushButton#IconButton {
     background: rgba(255, 255, 255, 210);
     border: 0;
     color: #64748b;
-    font-size: 18px;
+    font-size: 11px;
+    font-weight: 900;
     padding: 0;
 }
 QCheckBox {
@@ -304,7 +306,7 @@ class MainWindow(QMainWindow):
         self.language_picker.addItem(self.copy.language_name(AppLanguage.PERSIAN), AppLanguage.PERSIAN)
         self.language_picker.currentIndexChanged.connect(self.on_language_changed)
         self.language_picker.hide()
-        self.language_button = QPushButton("🇬🇧")
+        self.language_button = QPushButton("EN")
         self.language_button.setObjectName("FlagButton")
         self.language_button.clicked.connect(self.on_toggle_language)
         layout.addWidget(self.language_button)
@@ -502,7 +504,7 @@ class MainWindow(QMainWindow):
         proxy_editor_layout = QGridLayout(proxy_editor)
         proxy_editor_layout.setContentsMargins(0, 0, 0, 0)
         proxy_editor_layout.setSpacing(0)
-        self.proxy_visibility_button = QPushButton("👁")
+        self.proxy_visibility_button = QPushButton("EYE")
         self.proxy_visibility_button.setObjectName("IconButton")
         self.proxy_visibility_button.setToolTip("Show / hide config")
         proxy_editor_layout.addWidget(self.proxy_link, 0, 0)
@@ -889,7 +891,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(self.copy.app_title)
         self.title_label.setText(self.copy.app_title)
         self.subtitle_label.setText(self.copy.app_subtitle)
-        self.language_button.setText("🇮🇷" if self.current_language() == AppLanguage.PERSIAN else "🇬🇧")
+        self.language_button.setText("FA" if self.current_language() == AppLanguage.PERSIAN else "EN")
         self.connect_button.setText(self.copy.connect)
         self.logs_button.setText(self.copy.logs)
         self.disconnect_button.setText(self.copy.disconnect)
