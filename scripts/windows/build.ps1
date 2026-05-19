@@ -27,9 +27,20 @@ if ($xraySource -and ([System.IO.Path]::GetFullPath($xraySource) -ne $resolvedBu
     & (Join-Path $PSScriptRoot "fetch-xray.ps1") -Destination $bundledXrayPath
 }
 
-python -m pip install -r requirements.txt
-python -m pip install pyinstaller
-pyinstaller `
+$pythonExe = $null
+$pythonArgs = @()
+if (Get-Command python.exe -ErrorAction SilentlyContinue) {
+    $pythonExe = "python"
+} elseif (Get-Command py.exe -ErrorAction SilentlyContinue) {
+    $pythonExe = "py"
+    $pythonArgs = @("-3.11")
+} else {
+    throw "Python 3.11 was not found. Install it with: winget install --id Python.Python.3.11 -e"
+}
+
+& $pythonExe @pythonArgs -m pip install -r requirements.txt
+& $pythonExe @pythonArgs -m pip install pyinstaller
+& $pythonExe @pythonArgs -m PyInstaller `
   --noconfirm `
   --clean `
   --windowed `
