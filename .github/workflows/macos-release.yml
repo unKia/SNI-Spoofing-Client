@@ -8,16 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-latest
-          - arch: x86_64
-            runner: macos-13
+    name: Build (arm64)
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -30,17 +22,17 @@ jobs:
         working-directory: macos-arm
         env:
           ALLOW_UNSIGNED_APP_BUILD: "1"
-        run: ./build_release.sh ${{ matrix.arch }}
+        run: ./build_release.sh arm64
 
       - name: Package DMG
         working-directory: macos-arm
-        run: ./package_dmg.sh ${{ matrix.arch }}
+        run: ./package_dmg.sh arm64
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
-          path: macos-arm/dist/SniSpoofingClient-macos-${{ matrix.arch }}-*.dmg
+          name: macos-arm64
+          path: macos-arm/dist/SniSpoofingClient-macos-arm64-*.dmg
           if-no-files-found: error
 
   release:
