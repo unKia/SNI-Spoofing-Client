@@ -485,9 +485,7 @@ class MainWindow(QMainWindow):
         row.setSpacing(18)
 
         self.allowlist_domain = QLineEdit()
-        self.allowlist_domain.textChanged.connect(self.on_input_changed)
         self.allowlist_ip = QLineEdit()
-        self.allowlist_ip.textChanged.connect(self.on_input_changed)
         self.allowlist_domain.setMinimumHeight(56)
         self.allowlist_ip.setMinimumHeight(56)
 
@@ -498,7 +496,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(row)
 
         self.proxy_link = QTextEdit()
-        self.proxy_link.textChanged.connect(self.on_input_changed)
         self.proxy_link.setPlaceholderText(self.copy.proxy_link_placeholder)
         self.proxy_link.setMinimumHeight(142)
         self.proxy_config_section_label = self._section_label(self.copy.step2_proxy)
@@ -802,19 +799,6 @@ class MainWindow(QMainWindow):
             else:
                 self.append_log(f"[{event.level.upper()}] {event.message}")
         self.refresh_ui_state()
-
-    def on_input_changed(self) -> None:
-        try:
-            config = self.form_to_config()
-            self.runtime.update_config(
-                whitelist_domain=config.whitelist_domain,
-                whitelist_ip=config.whitelist_ip,
-                whitelist_port=config.whitelist_port,
-                proxy_link=config.proxy_link,
-            )
-            self.runtime.save_config()
-        except Exception:
-            pass
 
     def on_save(self) -> bool:
         try:

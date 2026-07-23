@@ -127,21 +127,9 @@ final class TunnelController: ObservableObject {
             UserDefaults.standard.set(enableSystemProxyInProxyMode, forKey: Self.systemProxyPreferenceKey)
         }
     }
-    @Published var whitelistDomainInput = "" {
-        didSet {
-            UserDefaults.standard.set(whitelistDomainInput, forKey: "app.input.whitelistDomain")
-        }
-    }
-    @Published var whitelistIPInput = "" {
-        didSet {
-            UserDefaults.standard.set(whitelistIPInput, forKey: "app.input.whitelistIP")
-        }
-    }
-    @Published var vlessConfigInput = "" {
-        didSet {
-            UserDefaults.standard.set(vlessConfigInput, forKey: "app.input.vlessConfig")
-        }
-    }
+    @Published var whitelistDomainInput = ""
+    @Published var whitelistIPInput = ""
+    @Published var vlessConfigInput = ""
     @Published var workflowSteps = TunnelController.makeDefaultWorkflowSteps()
     @Published var connectionHeadline = AppCopy(language: AppLanguageStore.shared.selectedLanguage).readyHeadline
     @Published var connectionDetail = AppCopy(language: AppLanguageStore.shared.selectedLanguage).connectionSubtitle
@@ -205,9 +193,6 @@ final class TunnelController: ObservableObject {
         if UserDefaults.standard.object(forKey: Self.systemProxyPreferenceKey) != nil {
             enableSystemProxyInProxyMode = UserDefaults.standard.bool(forKey: Self.systemProxyPreferenceKey)
         }
-        whitelistDomainInput = UserDefaults.standard.string(forKey: "app.input.whitelistDomain") ?? ""
-        whitelistIPInput = UserDefaults.standard.string(forKey: "app.input.whitelistIP") ?? ""
-        vlessConfigInput = UserDefaults.standard.string(forKey: "app.input.vlessConfig") ?? ""
         helperLogPathDescription = Self.helperLogURL.path
         resetLogStateForFreshStart() // Ensure we start with a clean log view
         refreshHelperState()
@@ -2341,4 +2326,231 @@ final class TunnelController: ObservableObject {
     private static func promptForPassword() -> String? {
         if let cached = cachedAdminPassword { return cached }
         let alert = NSAlert()
-        alert.messageText = AppCopy(language
+        alert.messageText = AppCopy(language: AppLanguageStore.shared.selectedLanguage).administratorPrivilegesRequired
+        alert.informativeText = AppCopy(language: AppLanguageStore.shared.selectedLanguage).helperPrivilegesMessage
+        let secureTextField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        alert.accessoryView = secureTextField
+        let promptCopy = AppCopy(language: AppLanguageStore.shared.selectedLanguage)
+        alert.addButton(withTitle: promptCopy.helperPrivilegesOK)
+        alert.addButton(withTitle: promptCopy.helperPrivilegesCancel)
+        alert.window.initialFirstResponder = secureTextField
+        NSApp.activate(ignoringOtherApps: true)
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            cachedAdminPassword = secureTextField.stringValue
+            return cachedAdminPassword
+        }
+        return nil
+    }
+
+    @MainActor
+    private static func runPrivilegedShell(_ command: String) async throws {
+        guard let password = promptForPassword() else {
+            throw TunnelControllerError.commandFailed(AppCopy(language: AppLanguageStore.shared.selectedLanguage).helperStartCancelled)
+        }
+
+        do {
+            try await runPrivilegedShell(command: command, password: password)
+        } catch {
+            let lowered = error.localizedDescription.lowercased()
+            if lowered.contains("incorrect password") || lowered.contains("try again") {
+                cachedAdminPassword = nil
+                throw TunnelControllerError.commandFailed(AppCopy(language: AppLanguageStore.shared.selectedLanguage).incorrectPassword)
+            }
+            throw error
+        }
+    }
+
+    private static func runPrivilegedShell(command: String, password: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                
+                let escapedPassword = password.replacingOccurrences(of: "'", with: "'\"'\"'")
+                let bashCommand = "echo '\(escapedPassword)' | sudo -S bash -c '\(command.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+                process.arguments = ["-c", bashCommand]
+
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+
+                    if process.terminationStatus != 0 {
+                        let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+                        continuation.resume(throwing: NSError(
+                            domain: "TunnelController.Process",
+                            code: Int(process.terminationStatus),
+                            userInfo: [NSLocalizedDescriptionKey: errorText]
+                        ))
+                        return
+                    }
+
+                    continuation.resume(returning: ())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private static func extractLevel(from line: String) -> ProxyLogLevel {
+        guard line.hasPrefix("[") else {
+            return .info
+        }
+        guard let closing = line.firstIndex(of: "]") else {
+            return .info
+        }
+        let raw = String(line[line.index(after: line.startIndex) ..< closing])
+        return ProxyLogLevel.parse(raw)
+    }
+
+    private static func extractValue(for key: String, in line: String) -> String? {
+        // More robust parsing: look for key=value or key: value
+        let patterns = ["\(key)=", "\(key): "]
+        for pattern in patterns {
+            if let range = line.range(of: pattern) {
+                let tail = line[range.upperBound...]
+                // Stop at space, comma, or end of string
+                let splitIndex = tail.firstIndex(where: { $0 == " " || $0 == "," }) ?? tail.endIndex
+                return String(tail[..<splitIndex])
+            }
+        }
+        return nil
+    }
+
+    private static func extractDetail(in line: String) -> String? {
+        guard let range = line.range(of: "detail=") else {
+            return nil
+        }
+        return String(line[range.upperBound...])
+    }
+
+    private static func shellQuote(_ string: String) -> String {
+        "'" + string.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+
+    private static func appleScriptEscaped(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static let projectRootURL =
+        URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+
+    private static let helperSupportDirectoryURL =
+        FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/SniSpoofingMac", isDirectory: true)
+
+    private static var buildArchitectureFolderName: String {
+        #if arch(arm64)
+        "arm64"
+        #elseif arch(x86_64)
+        "x86_64"
+        #else
+        "unknown"
+        #endif
+    }
+
+    private static var helperBinaryURL: URL {
+        if let bundledHelperURL = Bundle.main.url(forResource: "sni-proxy-helper", withExtension: nil),
+           FileManager.default.isExecutableFile(atPath: bundledHelperURL.path) {
+            return bundledHelperURL
+        }
+
+        let repoBuildCandidates = [
+            projectRootURL.appendingPathComponent("macos-arm/build/\(buildArchitectureFolderName)/Debug/sni-proxy-helper"),
+            projectRootURL.appendingPathComponent("macos-arm/build/Debug/sni-proxy-helper")
+        ]
+
+        for candidate in repoBuildCandidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
+            return candidate
+        }
+
+        if let derivedDataURL = latestDerivedDataHelperBinaryURL() {
+            return derivedDataURL
+        }
+
+        return repoBuildCandidates[0]
+    }
+
+    private static let helperConfigURL =
+        helperSupportDirectoryURL.appendingPathComponent("helper-config.json")
+
+    private static let helperLogURL =
+        helperSupportDirectoryURL.appendingPathComponent("proxy-helper.log")
+
+    private static let helperPIDURL =
+        helperSupportDirectoryURL.appendingPathComponent("proxy-helper.pid")
+
+    private static let diagnosticDumpURL =
+        helperSupportDirectoryURL.appendingPathComponent("last-diagnostic-dump.txt")
+
+    private static func latestDerivedDataHelperBinaryURL() -> URL? {
+        let derivedDataRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)
+        guard let enumerator = FileManager.default.enumerator(
+            at: derivedDataRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        var bestMatch: (url: URL, date: Date)?
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == "sni-proxy-helper" else {
+                continue
+            }
+            guard FileManager.default.isExecutableFile(atPath: url.path) else {
+                continue
+            }
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            let date = values?.contentModificationDate ?? .distantPast
+            if bestMatch == nil || date > bestMatch!.date {
+                bestMatch = (url, date)
+            }
+        }
+
+        return bestMatch?.url
+    }
+}
+
+private extension String {
+    var isValidIPv4Address: Bool {
+        var address = in_addr()
+        return withCString { inet_pton(AF_INET, $0, &address) } == 1
+    }
+}
+
+enum TunnelControllerError: LocalizedError {
+    case managerUnavailable
+    case invalidSession
+    case emptyProviderResponse
+    case commandFailed(String)
+    case helperBinaryMissing(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .managerUnavailable:
+            return "Manager is unavailable"
+        case .invalidSession:
+            return "Packet tunnel session is invalid"
+        case .emptyProviderResponse:
+            return "No response was received from the provider"
+        case let .commandFailed(message):
+            return "Command execution failed: \(message)"
+        case let .helperBinaryMissing(path):
+            return "Helper binary not found: \(path)"
+        }
+    }
+}
