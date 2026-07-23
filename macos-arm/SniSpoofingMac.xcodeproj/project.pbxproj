@@ -33,6 +33,7 @@
 		AF4B07590B87F611DA37558B /* flag_uk.svg in Resources */ = {isa = PBXBuildFile; fileRef = 4AE6185A21C33AE0DB29BAC1 /* flag_uk.svg */; };
 		B4721D380899BD27F83576D1 /* TunnelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834A547DAD5DEB7A07C2A35 /* TunnelController.swift */; };
 		B8B25C7902A235FE34D0C2D6 /* TunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F576F52BEC4A3C8D5084AFB5 /* TunnelConfiguration.swift */; };
+		BA1C2D3E4F5A6B7C8D9E0F1 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D3E4F5A6B7C8D9E0F1A2B3 /* KeychainHelper.swift */; };
 		BCA761FF59821B44F86F4BF9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E06C6BB3A8BA83C74CA0C892 /* Assets.xcassets */; };
 		BF727CC88102AAF70957B5BA /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9583A08CE5B007F3EBA52B10 /* AppLocalization.swift */; };
 		C3E91DAA124E6E3D82470FE2 /* RawPacketSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160D64E473752FB9F09E415 /* RawPacketSupport.swift */; };
@@ -94,6 +95,7 @@
 		9112A2EAB0CB38294AC8749A /* TunnelTrafficBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelTrafficBridge.swift; sourceTree = "<group>"; };
 		9583A08CE5B007F3EBA52B10 /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
 		A6AD144AAB5F4CE30D2DB0D5 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		C2D3E4F5A6B7C8D9E0F1A2B3 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		A838684F011CCD626438EE5D /* PrivilegedHelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperMain.swift; sourceTree = "<group>"; };
 		AE7282B8DA2DFEC6B37042B4 /* LocalProxyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProxyService.swift; sourceTree = "<group>"; };
 		B834A547DAD5DEB7A07C2A35 /* TunnelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelController.swift; sourceTree = "<group>"; };
@@ -213,6 +215,7 @@
 				9583A08CE5B007F3EBA52B10 /* AppLocalization.swift */,
 				E06C6BB3A8BA83C74CA0C892 /* Assets.xcassets */,
 				D37DE60F22CF7E17CD76A432 /* ContentView.swift */,
+				C2D3E4F5A6B7C8D9E0F1A2B3 /* KeychainHelper.swift */,
 				AE7282B8DA2DFEC6B37042B4 /* LocalProxyService.swift */,
 				5D24832D6852DF5EA336B4F0 /* SniSpoofingMacApp.swift */,
 				B834A547DAD5DEB7A07C2A35 /* TunnelController.swift */,
@@ -342,6 +345,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF727CC88102AAF70957B5BA /* AppLocalization.swift in Sources */,
+				BA1C2D3E4F5A6B7C8D9E0F1 /* KeychainHelper.swift in Sources */,
 				2F50D9D2500E30326B22B9B5 /* ContentView.swift in Sources */,
 				4A6BE616388BA474C54AFDD4 /* LibpcapBridge.m in Sources */,
 				909F320DB9695AE77D92CD5D /* LocalProxyService.swift in Sources */,
