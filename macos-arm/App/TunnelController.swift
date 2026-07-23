@@ -2346,9 +2346,52 @@ final class TunnelController: ObservableObject {
     @MainActor
     private static var cachedAdminPassword: String? = nil
 
+    private static let adminPasswordFileURL: URL = {
+        let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appDirectory = appSupportURL.appendingPathComponent("SniSpoofing", isDirectory: true)
+        return appDirectory.appendingPathComponent(".admin_pass")
+    }()
+
+    private static func ensureAdminPasswordDirectoryExists() throws {
+        let appDirectory = adminPasswordFileURL.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: appDirectory.path) {
+            try FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        }
+    }
+
+    private static func loadPasswordFromFile() -> String? {
+        do {
+            guard FileManager.default.fileExists(atPath: adminPasswordFileURL.path) else { return nil }
+            let encodedData = try Data(contentsOf: adminPasswordFileURL)
+            guard let encodedString = String(data: encodedData, encoding: .utf8), !encodedString.isEmpty else { return nil }
+            guard let decodedData = Data(base64Encoded: encodedString) else { return nil }
+            return String(data: decodedData, encoding: .utf8)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func savePasswordToFile(_ password: String) throws {
+        try ensureAdminPasswordDirectoryExists()
+        guard let passwordData = password.data(using: .utf8) else { throw NSError(domain: "TunnelController", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode password"]) }
+        let encodedData = passwordData.base64EncodedData()
+        try encodedData.write(to: adminPasswordFileURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAt: adminPasswordFileURL)
+    }
+
+    private static func deletePasswordFile() {
+        try? FileManager.default.removeItem(at: adminPasswordFileURL)
+    }
+
     @MainActor
     private static func promptForPassword() -> String? {
         if let cached = cachedAdminPassword { return cached }
+        
+        if let filePassword = loadPasswordFromFile(), !filePassword.isEmpty {
+            cachedAdminPassword = filePassword
+            return filePassword
+        }
+        
         let alert = NSAlert()
         alert.messageText = AppCopy(language: AppLanguageStore.shared.selectedLanguage).administratorPrivilegesRequired
         alert.informativeText = AppCopy(language: AppLanguageStore.shared.selectedLanguage).helperPrivilegesMessage
@@ -2361,7 +2404,9 @@ final class TunnelController: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         
         if alert.runModal() == .alertFirstButtonReturn {
-            cachedAdminPassword = secureTextField.stringValue
+            let password = secureTextField.stringValue
+            cachedAdminPassword = password
+            try? savePasswordToFile(password)
             return cachedAdminPassword
         }
         return nil
@@ -2379,6 +2424,7 @@ final class TunnelController: ObservableObject {
             let lowered = error.localizedDescription.lowercased()
             if lowered.contains("incorrect password") || lowered.contains("try again") {
                 cachedAdminPassword = nil
+                deletePasswordFile()
                 throw TunnelControllerError.commandFailed(AppCopy(language: AppLanguageStore.shared.selectedLanguage).incorrectPassword)
             }
             throw error
