@@ -107,6 +107,9 @@ final class TunnelController: ObservableObject {
         URL(string: "https://www.cloudflare.com/cdn-cgi/trace"),
     ].compactMap { $0 }
     private static let systemProxyPreferenceKey = "app.proxy.enableSystemProxy"
+    private static let whitelistDomainPreferenceKey = "app.input.whitelistDomain"
+    private static let whitelistIPPreferenceKey = "app.input.whitelistIP"
+    private static let vlessConfigPreferenceKey = "app.input.vlessConfig"
 
     enum ConnectionOperationState {
         case idle
@@ -127,9 +130,21 @@ final class TunnelController: ObservableObject {
             UserDefaults.standard.set(enableSystemProxyInProxyMode, forKey: Self.systemProxyPreferenceKey)
         }
     }
-    @Published var whitelistDomainInput = ""
-    @Published var whitelistIPInput = ""
-    @Published var vlessConfigInput = ""
+    @Published var whitelistDomainInput = "" {
+        didSet {
+            UserDefaults.standard.set(whitelistDomainInput, forKey: Self.whitelistDomainPreferenceKey)
+        }
+    }
+    @Published var whitelistIPInput = "" {
+        didSet {
+            UserDefaults.standard.set(whitelistIPInput, forKey: Self.whitelistIPPreferenceKey)
+        }
+    }
+    @Published var vlessConfigInput = "" {
+        didSet {
+            UserDefaults.standard.set(vlessConfigInput, forKey: Self.vlessConfigPreferenceKey)
+        }
+    }
     @Published var workflowSteps = TunnelController.makeDefaultWorkflowSteps()
     @Published var connectionHeadline = AppCopy(language: AppLanguageStore.shared.selectedLanguage).readyHeadline
     @Published var connectionDetail = AppCopy(language: AppLanguageStore.shared.selectedLanguage).connectionSubtitle
@@ -192,6 +207,15 @@ final class TunnelController: ObservableObject {
     init() {
         if UserDefaults.standard.object(forKey: Self.systemProxyPreferenceKey) != nil {
             enableSystemProxyInProxyMode = UserDefaults.standard.bool(forKey: Self.systemProxyPreferenceKey)
+        }
+        if UserDefaults.standard.object(forKey: Self.whitelistDomainPreferenceKey) != nil {
+            whitelistDomainInput = UserDefaults.standard.string(forKey: Self.whitelistDomainPreferenceKey) ?? ""
+        }
+        if UserDefaults.standard.object(forKey: Self.whitelistIPPreferenceKey) != nil {
+            whitelistIPInput = UserDefaults.standard.string(forKey: Self.whitelistIPPreferenceKey) ?? ""
+        }
+        if UserDefaults.standard.object(forKey: Self.vlessConfigPreferenceKey) != nil {
+            vlessConfigInput = UserDefaults.standard.string(forKey: Self.vlessConfigPreferenceKey) ?? ""
         }
         helperLogPathDescription = Self.helperLogURL.path
         resetLogStateForFreshStart() // Ensure we start with a clean log view
