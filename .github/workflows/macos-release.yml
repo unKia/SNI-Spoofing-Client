@@ -24,9 +24,21 @@ jobs:
           ALLOW_UNSIGNED_APP_BUILD: "1"
         run: ./build_release.sh arm64
 
+      - name: Ad-Hoc Sign App
+        working-directory: macos-arm
+        run: |
+          echo "Applying Ad-Hoc signature..."
+          find . -name "*.app" -exec codesign --force --deep --sign - {} \; || true
+
       - name: Package DMG
         working-directory: macos-arm
         run: ./package_dmg.sh arm64
+
+      - name: Ad-Hoc Sign DMG
+        working-directory: macos-arm
+        run: |
+          echo "Signing DMG..."
+          find dist/ -name "*.dmg" -exec codesign --force --sign - {} \; || true
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
