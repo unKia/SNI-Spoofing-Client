@@ -314,11 +314,10 @@ struct ContentView: View {
                         .animation(.easeInOut(duration: 0.2), value: configFieldNeedsAttention)
                     }
 
-                    if tunnelController.selectedConnectionMode == .proxy {
-                        Button {
-                            guard !inputsLocked else { return }
-                            tunnelController.enableSystemProxyInProxyMode.toggle()
-                        } label: {
+                    Button {
+                        guard !inputsLocked else { return }
+                        tunnelController.enableSystemProxyInProxyMode.toggle()
+                    } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: tunnelController.enableSystemProxyInProxyMode ? "checkmark.square.fill" : "square")
                                     .font(.system(size: 18, weight: .semibold))
@@ -415,7 +414,6 @@ struct ContentView: View {
 
     private var summarySection: some View {
         VStack(spacing: 12) {
-            infoRow(label: copy.modeLabel, value: copy.connectionModeTitle(tunnelController.selectedConnectionMode))
             infoRow(label: copy.connectionLabel, value: tunnelController.connectionDetail)
             infoRow(label: copy.allowlistLabel, value: tunnelController.activeConnectionSummary)
             infoRow(label: copy.systemRouteLabel, value: tunnelController.routeManagerSummary)

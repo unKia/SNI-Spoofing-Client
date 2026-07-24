@@ -722,7 +722,7 @@ final class TunnelController: ObservableObject {
     private func disconnectWorkflowResources(cleanupState: ConnectionResourceState? = nil) async throws {
         var failures: [String] = []
         let shouldDisableProxy = cleanupState?.systemProxyEnabled ?? activeConnectionContext?.systemProxyEnabled == true
-        let shouldRestoreDNS = cleanupState?.dnsApplied ?? activeDNSConfigurationSnapshot != nil
+        let shouldRestoreDNS = (cleanupState?.dnsApplied == true) || (activeDNSConfigurationSnapshot != nil)
         let shouldStopXray = cleanupState?.xrayStarted ?? xrayManager.isRunning
         let shouldStopHelper = cleanupState?.helperStarted ?? isPrivilegedHelperRunning
 
@@ -841,11 +841,7 @@ final class TunnelController: ObservableObject {
         }
 
         if isConnected, let context = activeConnectionContext {
-            applyConnectedStatusPresentation(for: context.mode, socksPort: context.socksPort, isProbeRunning: false)
-        }
-
-        if manager == nil {
-            managerStatusDescription = copy.managerNotLoaded
+            applyConnectedStatusPresentation(socksPort: context.socksPort, isProbeRunning: false, systemProxyEnabled: context.systemProxyEnabled)
         }
 
         if !isPrivilegedHelperRunning {
@@ -857,10 +853,6 @@ final class TunnelController: ObservableObject {
             if proxyLastDetail == "-" || proxyLastDetail == copy.noEventsRecorded {
                 proxyLastDetail = copy.noEventsRecorded
             }
-        }
-
-        if !isConnected && !isBusy {
-            providerStatusDescription = copy.providerStatusUnknown
         }
     }
 
@@ -1133,8 +1125,6 @@ final class TunnelController: ObservableObject {
         lines.append("Busy: \(isBusy)")
         lines.append("Helper running: \(isPrivilegedHelperRunning)")
         lines.append("Helper state: \(helperStateDescription)")
-        lines.append("Manager status: \(managerStatusDescription)")
-        lines.append("Provider status: \(providerStatusDescription)")
         lines.append("Proxy status: \(proxyStatusDescription)")
         lines.append("Proxy phase: \(proxyPhase)")
         lines.append("Proxy connections: \(proxyConnectionCount)")
