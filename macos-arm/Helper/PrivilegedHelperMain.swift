@@ -217,39 +217,58 @@ private struct HelperOptions {
         if let configPath {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
             let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+
+            let listenHost: String = raw["LISTEN_HOST"] as? String ?? TunnelConfiguration.defaults.listenHost
+            let listenPort: Int = (raw["LISTEN_PORT"] as? NSNumber)?.intValue ?? TunnelConfiguration.defaults.listenPort
+            let connectIP: String = raw["CONNECT_IP"] as? String ?? TunnelConfiguration.defaults.connectIP
+            let connectPort: Int = (raw["CONNECT_PORT"] as? NSNumber)?.intValue ?? TunnelConfiguration.defaults.connectPort
+            let upstreamIP: String = raw["UPSTREAM_IP"] as? String ?? TunnelConfiguration.defaults.upstreamIP
+            let upstreamPort: Int = (raw["UPSTREAM_PORT"] as? NSNumber)?.intValue ?? TunnelConfiguration.defaults.upstreamPort
+            let fakeSNI: String = raw["FAKE_SNI"] as? String ?? TunnelConfiguration.defaults.fakeSNI
+            let logLevel: ProxyLogLevel = ProxyLogLevel.parse(raw["LOG_LEVEL"] as? String)
+            let dnsServers: [String] = []
+            let excludedIPv4Addresses: [String] = []
+
             base = TunnelConfiguration(
-                listenHost: raw["LISTEN_HOST"] as? String ?? TunnelConfiguration.defaults.listenHost,
-                listenPort: (raw["LISTEN_PORT"] as? NSNumber)?.intValue ?? TunnelConfiguration.defaults.listenPort,
-                connectIP: raw["CONNECT_IP"] as? String ?? TunnelConfiguration.defaults.connectIP,
-                connectPort: (raw["CONNECT_PORT"] as? NSNumber)?.intValue ?? TunnelConfiguration.defaults.connectPort,
-                upstreamIP: raw["UPSTREAM_IP"] as? String ?? TunnelConfiguration.defaults.upstreamIP,
-                upstreamPort: (raw["UPSTREAM_PORT"] as? NSNumber)?.intValue ?? TunnelConfiguration.defaults.upstreamPort,
-                fakeSNI: raw["FAKE_SNI"] as? String ?? TunnelConfiguration.defaults.fakeSNI,
-                logLevel: ProxyLogLevel.parse(raw["LOG_LEVEL"] as? String),
-                connectionMode: .proxy,
+                listenHost: listenHost,
+                listenPort: listenPort,
+                connectIP: connectIP,
+                connectPort: connectPort,
+                upstreamIP: upstreamIP,
+                upstreamPort: upstreamPort,
+                fakeSNI: fakeSNI,
+                logLevel: logLevel,
                 httpProxyPort: nil,
                 socksProxyPort: nil,
-                dnsServers: [],
-                excludedIPv4Addresses: []
+                dnsServers: dnsServers,
+                excludedIPv4Addresses: excludedIPv4Addresses
             )
         } else {
             base = .defaults
         }
 
+        let finalListenHost: String = listenHost ?? base.listenHost
+        let finalListenPort: Int = listenPort ?? base.listenPort
+        let finalConnectIP: String = connectIP ?? base.connectIP
+        let finalConnectPort: Int = connectPort ?? base.connectPort
+        let finalFakeSNI: String = fakeSNI ?? base.fakeSNI
+        let finalLogLevel: ProxyLogLevel = logLevel ?? base.logLevel
+        let finalDNSServers: [String] = []
+        let finalExcludedIPv4Addresses: [String] = base.excludedIPv4Addresses
+
         return TunnelConfiguration(
-            listenHost: listenHost ?? base.listenHost,
-            listenPort: listenPort ?? base.listenPort,
-            connectIP: connectIP ?? base.connectIP,
-            connectPort: connectPort ?? base.connectPort,
+            listenHost: finalListenHost,
+            listenPort: finalListenPort,
+            connectIP: finalConnectIP,
+            connectPort: finalConnectPort,
             upstreamIP: base.upstreamIP,
             upstreamPort: base.upstreamPort,
-            fakeSNI: fakeSNI ?? base.fakeSNI,
-            logLevel: logLevel ?? base.logLevel,
-            connectionMode: base.connectionMode,
+            fakeSNI: finalFakeSNI,
+            logLevel: finalLogLevel,
             httpProxyPort: base.httpProxyPort,
             socksProxyPort: base.socksProxyPort,
-            dnsServers: [],
-            excludedIPv4Addresses: base.excludedIPv4Addresses
+            dnsServers: finalDNSServers,
+            excludedIPv4Addresses: finalExcludedIPv4Addresses
         )
     }
 }
