@@ -107,9 +107,9 @@ struct AppCopy {
     var appSubtitle: String {
         switch language {
         case .english:
-            return "utility for `Proxy` or `Tunnel` mode with a helper and Xray."
+            return "utility for Proxy mode with a helper and Xray."
         case .persian:
-            return "یک ابزار برای حالت `Proxy` یا `Tunnel` با helper و Xray."
+            return "یک ابزار برای حالت Proxy با helper و Xray."
         }
     }
 
@@ -151,18 +151,6 @@ struct AppCopy {
 
     var createdNewManager: String {
         language == .english ? "Created a new manager, not saved yet" : "یک مدیر جدید ساخته شد و هنوز ذخیره نشده است"
-    }
-
-    var vpnPreferencesReset: String {
-        language == .english ? "VPN preferences reset" : "تنظیمات VPN بازنشانی شد"
-    }
-
-    var managerNotLoaded: String {
-        language == .english ? "Manager is not loaded" : "مدیر بارگذاری نشده است"
-    }
-
-    var providerStatusUnknown: String {
-        language == .english ? "Provider status unknown" : "وضعیت provider نامشخص است"
     }
 
     var helperIdle: String {
@@ -407,18 +395,6 @@ struct AppCopy {
         language == .english ? "Download" : "دانلود"
     }
 
-    func connectionModeTitle(_ mode: AppConnectionMode) -> String {
-        switch (mode, language) {
-        case (.proxy, .english):
-            return "Proxy"
-        case (.proxy, .persian):
-            return "پروکسی"
-        case (.tunnel, .english):
-            return "Tunnel"
-        case (.tunnel, .persian):
-            return "تونل"
-        }
-    }
 
     func workflowSubtitle(count: Int) -> String {
         switch language {
@@ -522,20 +498,8 @@ struct AppCopy {
         language == .english ? "Enabling Proxy Route" : "فعال‌سازی مسیر پروکسی"
     }
 
-    var startingTunnelHeadline: String {
-        language == .english ? "Starting Tunnel Session" : "در حال شروع نشست تونل"
-    }
-
     var proxyConnectedHeadline: String {
         language == .english ? "Proxy Connected" : "پروکسی متصل شد"
-    }
-
-    var tunnelConnectedHeadline: String {
-        language == .english ? "Tunnel Connected" : "تونل متصل شد"
-    }
-
-    var vpnIsOnHeadline: String {
-        language == .english ? "VPN Is On" : "VPN روشن است"
     }
 
     var testingConnectivityHeadline: String {
@@ -628,14 +592,6 @@ struct AppCopy {
         language == .english ? "Manual proxy only | system settings unchanged" : "فقط پروکسی دستی | تنظیمات سیستم بدون تغییر"
     }
 
-    var startingTunnelDetail: String {
-        language == .english ? "Starting a VPN-style tunnel session" : "در حال شروع نشست تونل به سبک VPN"
-    }
-
-    var packetTunnelStartingDetail: String {
-        language == .english ? "PacketTunnelProvider is starting." : "PacketTunnelProvider در حال شروع است."
-    }
-
     var proxyCompleteDetail: String {
         language == .english ? "The flow is complete. System proxy is active and traffic passes through the local spoof proxy plus embedded Xray." : "فرآیند کامل شد. پروکسی سیستم فعال است و ترافیک از پروکسی محلی و Xray داخلی عبور می‌کند."
     }
@@ -644,28 +600,12 @@ struct AppCopy {
         language == .english ? "The local spoof proxy and embedded Xray are ready. Configure your apps manually with the shown local proxy ports." : "پروکسی محلی spoof و Xray داخلی آماده هستند. برنامه‌های خودت را با پورت‌های محلی نمایش‌داده‌شده به‌صورت دستی تنظیم کن."
     }
 
-    var tunnelCompleteDetail: String {
-        language == .english ? "The tunnel session is up. macOS routes traffic through PacketTunnelProvider and embedded Xray." : "نشست تونل بالا آمده است. macOS ترافیک را از طریق PacketTunnelProvider و Xray داخلی مسیردهی می‌کند."
-    }
-
     var proxyProbeDetail: String {
         language == .english ? "Testing internet access through the proxy" : "در حال آزمایش دسترسی اینترنت از طریق پروکسی"
     }
 
-    var tunnelProbeDetail: String {
-        language == .english ? "Testing internet access through the tunnel session" : "در حال آزمایش دسترسی اینترنت از طریق نشست تونل"
-    }
-
     var probingProxyDetail: String {
         language == .english ? "Probing traffic through Xray and the spoof proxy..." : "در حال آزمایش ترافیک از طریق Xray و پروکسی spoof..."
-    }
-
-    var probingTunnelDetail: String {
-        language == .english ? "Probing traffic through PacketTunnelProvider and embedded Xray..." : "در حال آزمایش ترافیک از طریق PacketTunnelProvider و Xray داخلی..."
-    }
-
-    var probeFailedDetail: String {
-        language == .english ? "The tunnel session is up, but the probe failed. Test the browser manually." : "نشست تونل بالا آمده اما آزمایش ناموفق بود. مرورگر را به‌صورت دستی تست کن."
     }
 
     var disconnectedDetail: String {
@@ -676,15 +616,6 @@ struct AppCopy {
         language == .english ? "The helper process did not start." : "فرآیند helper شروع نشد."
     }
 
-    func systemProxyFailedDetail(status: String, providerMessage: String?) -> String {
-        let suffix = providerMessage.map { " | providerMessage=\($0)" } ?? ""
-        switch language {
-        case .english:
-            return "The packet tunnel could not connect. status=\(status)\(suffix)"
-        case .persian:
-            return "تونل بسته نتوانست متصل شود. وضعیت=\(status)\(suffix)"
-        }
-    }
 
     var helperPrivilegesTitle: String {
         language == .english ? "Administrator Privileges Required" : "دسترسی مدیر لازم است"

@@ -1,5 +1,4 @@
 import Foundation
-import NetworkExtension
 import AppKit
 import Darwin
 
@@ -45,7 +44,6 @@ private struct ConnectionDraft {
 }
 
 private struct ActiveConnectionContext {
-    let mode: AppConnectionMode
     let systemProxyEnabled: Bool
     let localProxyPort: Int
     let socksPort: Int
@@ -68,11 +66,9 @@ private struct DNSConfigurationSnapshot {
 }
 
 private struct ConnectionResourceState {
-    var mode: AppConnectionMode
     var helperStarted = false
     var xrayStarted = false
     var systemProxyEnabled = false
-    var tunnelStarted = false
     var dnsApplied = false
 }
 
@@ -124,7 +120,6 @@ final class TunnelController: ObservableObject {
     }
 
     @Published var configuration: TunnelConfiguration = .defaults
-    @Published var selectedConnectionMode: AppConnectionMode = .proxy
     @Published var enableSystemProxyInProxyMode: Bool = true {
         didSet {
             UserDefaults.standard.set(enableSystemProxyInProxyMode, forKey: Self.systemProxyPreferenceKey)
@@ -154,8 +149,6 @@ final class TunnelController: ObservableObject {
     @Published var lastProbeDescription = "-"
     @Published var originalServerSummary = "-"
     @Published var routeManagerSummary = "-"
-    @Published var managerStatusDescription = AppCopy(language: AppLanguageStore.shared.selectedLanguage).managerNotLoaded
-    @Published var providerStatusDescription = AppCopy(language: AppLanguageStore.shared.selectedLanguage).providerStatusUnknown
     @Published var proxyStatusDescription = AppCopy(language: AppLanguageStore.shared.selectedLanguage).helperIdle
     @Published var proxyPhase = "idle"
     @Published var proxyConnectionCount = 0
@@ -175,8 +168,6 @@ final class TunnelController: ObservableObject {
     @Published var isPrivilegedHelperRunning = false
 
     private let xrayManager = XrayManager.shared
-    private var manager: NETunnelProviderManager?
-    private var statusObserver: NSObjectProtocol?
     private var terminationObserver: NSObjectProtocol?
     private lazy var localProxyService = LocalProxyService { [weak self] status in
         Task { @MainActor in
@@ -230,142 +221,14 @@ final class TunnelController: ObservableObject {
                 self?.bestEffortShutdownForTermination()
             }
         }
-        Task {
-            await reloadManager()
-        }
         refreshLocalizedPresentation()
     }
 
     deinit {
-        if let statusObserver {
-            NotificationCenter.default.removeObserver(statusObserver)
-        }
         if let terminationObserver {
             NotificationCenter.default.removeObserver(terminationObserver)
         }
         helperLogTimer?.invalidate()
-    }
-
-    func reloadManager() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let managers = try await Self.loadManagedManagers()
-            appendLog(level: .debug, source: "provider", message: "Reload managers | matched=\(managers.count)")
-            if let existing = managers.first {
-                manager = existing
-                applyManagerConfiguration(existing)
-                managerStatusDescription = copy.configurationLoaded
-                if managers.count > 1 {
-                    try? await Self.removeManagers(Array(managers.dropFirst()))
-                    appendLog(level: .info, source: "provider", message: "Duplicate VPN profiles cleaned up")
-                }
-            } else {
-                let freshManager = NETunnelProviderManager()
-                manager = freshManager
-                managerStatusDescription = copy.createdNewManager
-            }
-            installStatusObserver()
-            updateConnectionStatus()
-            lastErrorDescription = ""
-        } catch {
-            fail("Failed to reload manager: \(error.localizedDescription)")
-        }
-    }
-
-    func saveConfiguration() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let preparedManager = try await prepareManagerForUse()
-            try await Self.saveManager(preparedManager)
-            try await Self.loadManager(preparedManager)
-            manager = preparedManager
-            applyManagerConfiguration(preparedManager)
-            installStatusObserver()
-            updateConnectionStatus()
-            try writeHelperConfiguration()
-            providerStatusDescription = copy.configurationSaved
-            appendLog(level: .info, source: "app", message: "Configuration saved")
-            lastErrorDescription = ""
-        } catch {
-            fail("Failed to save configuration: \(error.localizedDescription)")
-        }
-    }
-
-    func startTunnel() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let preparedManager = try await prepareManagerForUse()
-            try await Self.saveManager(preparedManager)
-            try await Self.loadManager(preparedManager)
-            manager = preparedManager
-            installStatusObserver()
-            try (preparedManager.connection as? NETunnelProviderSession)?.startVPNTunnel()
-            updateConnectionStatus()
-            providerStatusDescription = copy.startRequestSent
-            appendLog(level: .info, source: "provider", message: "Tunnel start request sent")
-            lastErrorDescription = ""
-        } catch {
-            fail("Failed to start tunnel: \(error.localizedDescription)")
-        }
-    }
-
-    func stopTunnel() {
-        guard let manager else {
-            fail(copy.managerNotLoaded)
-            return
-        }
-
-        manager.connection.stopVPNTunnel()
-        updateConnectionStatus()
-        providerStatusDescription = copy.stopRequestSent
-        appendLog(level: .info, source: "provider", message: "Tunnel stop request sent")
-        lastErrorDescription = ""
-    }
-
-    func refreshProviderStatus() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let session = try requireSession()
-            let responseData = try await Self.sendMessage(
-                TunnelAppMessage(command: .getStatus),
-                using: session
-            )
-            let status = try TunnelIPC.decode(TunnelProviderStatus.self, from: responseData)
-            providerStatusDescription = Self.describeProviderStatus(status)
-            consumeTunnelStatus(status, source: "provider")
-            appendLog(level: .info, source: "provider", message: "Provider status refreshed")
-            lastErrorDescription = ""
-        } catch {
-            fail("Failed to refresh provider status: \(error.localizedDescription)")
-        }
-    }
-
-    func reloadProviderConfiguration() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let session = try requireSession()
-            let responseData = try await Self.sendMessage(
-                TunnelAppMessage(command: .reloadConfiguration),
-                using: session
-            )
-            let status = try TunnelIPC.decode(TunnelProviderStatus.self, from: responseData)
-            providerStatusDescription = Self.describeProviderStatus(status)
-            consumeTunnelStatus(status, source: "provider")
-            appendLog(level: .info, source: "provider", message: "Provider configuration reloaded")
-            lastErrorDescription = ""
-        } catch {
-            fail("Failed to reload provider configuration: \(error.localizedDescription)")
-        }
     }
 
     func startProxy() {
@@ -461,7 +324,6 @@ final class TunnelController: ObservableObject {
             connectionOperation = .idle
         }
 
-        let connectionMode = selectedConnectionMode
         lastErrorDescription = ""
         connectionHeadline = copy.validatingHeadline
         connectionDetail = copy.validatingDetail
@@ -471,7 +333,7 @@ final class TunnelController: ObservableObject {
         lastProbeDescription = "-"
         originalServerSummary = "-"
         routeManagerSummary = "-"
-        var startedResources = ConnectionResourceState(mode: connectionMode)
+        var startedResources = ConnectionResourceState()
 
         do {
             if isConnected || isPrivilegedHelperRunning || xrayManager.isRunning {
@@ -498,13 +360,12 @@ final class TunnelController: ObservableObject {
                 upstreamPort: localProxyPort,
                 fakeSNI: draft.whitelistDomain,
                 logLevel: configuration.logLevel,
-                connectionMode: connectionMode,
                 httpProxyPort: httpPort,
                 socksProxyPort: socksPort,
                 dnsServers: dnsServers,
-                excludedIPv4Addresses: connectionMode == .tunnel ? [draft.whitelistIP] : []
+                excludedIPv4Addresses: []
             )
-            activeConnectionSummary = "\(copy.connectionModeTitle(connectionMode)): \(draft.whitelistDomain) -> \(draft.whitelistIP):\(draft.whitelistPort)"
+            activeConnectionSummary = "Proxy: \(draft.whitelistDomain) -> \(draft.whitelistIP):\(draft.whitelistPort)"
             activeProxySummary = "Local \(configuration.listenHost):\(localProxyPort) | SOCKS 127.0.0.1:\(socksPort) | HTTP 127.0.0.1:\(httpPort)"
             originalServerSummary = "\(draft.vless.originalAddress):\(draft.vless.originalPort) | \(draft.vless.remark)"
             let dnsSummary = dnsServers.isEmpty ? "none" : dnsServers.joined(separator: ",")
@@ -527,7 +388,7 @@ final class TunnelController: ObservableObject {
                 appendLog(
                     level: .debug,
                     source: "xray",
-                    message: "Xray config prepared | mode=\(connectionMode.rawValue) | outbound=\(xrayOutboundAddress):\(xrayOutboundPort) | original=\(draft.vless.originalAddress):\(draft.vless.originalPort) | spoofTarget=\(draft.whitelistIP):\(draft.whitelistPort) | network=\(draft.vless.network) | security=\(draft.vless.security) | sni=\(draft.vless.sni) | host=\(draft.vless.host) | path=\(draft.vless.path) | logLevel=\(configuration.logLevel.rawValue)"
+                    message: "Xray config prepared | outbound=\(xrayOutboundAddress):\(xrayOutboundPort) | original=\(draft.vless.originalAddress):\(draft.vless.originalPort) | spoofTarget=\(draft.whitelistIP):\(draft.whitelistPort) | network=\(draft.vless.network) | security=\(draft.vless.security) | sni=\(draft.vless.sni) | host=\(draft.vless.host) | path=\(draft.vless.path) | logLevel=\(configuration.logLevel.rawValue)"
                 )
                 try await xrayManager.start(configString: xrayConfig)
             } catch {
@@ -554,49 +415,23 @@ final class TunnelController: ObservableObject {
             updateWorkflowStep(.localProxy, state: .success, detail: copy.helperStartedDetail(host: configuration.listenHost, port: localProxyPort))
 
             let routeContext: [String]
-            switch connectionMode {
-            case .proxy:
-                if enableSystemProxyInProxyMode {
-                    updateWorkflowStep(.systemProxy, state: .running, detail: copy.configuringSystemProxyDetail)
-                    connectionHeadline = copy.enablingProxyRouteHeadline
-                    connectionDetail = copy.systemProxyDetail
-                    routeContext = try await enableSystemProxy(httpPort: httpPort, socksPort: socksPort)
-                    startedResources.systemProxyEnabled = true
-                    routeManagerSummary = "System proxy | \(routeContext.joined(separator: ", "))"
-                    updateWorkflowStep(.systemProxy, state: .success, detail: routeContext.joined(separator: ", "))
-                } else {
-                    routeContext = []
-                    routeManagerSummary = copy.manualProxyRouteSummary
-                    updateWorkflowStep(.systemProxy, state: .success, detail: copy.systemProxySkippedDetail)
-                }
-            case .tunnel:
-                updateWorkflowStep(.systemProxy, state: .running, detail: "Starting a VPN-style tunnel session")
-                connectionHeadline = copy.startingTunnelHeadline
-                connectionDetail = copy.packetTunnelStartingDetail
-                let providerStatus = try await startManagedTunnelSession()
-                startedResources.tunnelStarted = true
-                try Task.checkCancellation()
-                if !configuration.dnsServers.isEmpty {
-                    do {
-                        let dnsSnapshot = try await applySystemDNSServers(configuration.dnsServers)
-                        activeDNSConfigurationSnapshot = dnsSnapshot
-                        startedResources.dnsApplied = true
-                        appendLog(level: .info, source: "system", message: "System DNS enabled for tunnel: \(configuration.dnsServers.joined(separator: ", "))")
-                    } catch {
-                        appendLog(level: .error, source: "system", message: "Failed to apply system DNS for tunnel: \(error.localizedDescription)")
-                    }
-                }
+            if enableSystemProxyInProxyMode {
+                updateWorkflowStep(.systemProxy, state: .running, detail: copy.configuringSystemProxyDetail)
+                connectionHeadline = copy.enablingProxyRouteHeadline
+                connectionDetail = copy.systemProxyDetail
+                routeContext = try await enableSystemProxy(httpPort: httpPort, socksPort: socksPort)
+                startedResources.systemProxyEnabled = true
+                routeManagerSummary = "System proxy | \(routeContext.joined(separator: ", "))"
+                updateWorkflowStep(.systemProxy, state: .success, detail: routeContext.joined(separator: ", "))
+            } else {
                 routeContext = []
-                routeManagerSummary = "Packet tunnel | \(providerStatus.phase)"
-                providerStatusDescription = Self.describeProviderStatus(providerStatus)
-                consumeTunnelStatus(providerStatus, source: "provider")
-                updateWorkflowStep(.systemProxy, state: .success, detail: providerStatus.detail ?? "Tunnel session connected")
+                routeManagerSummary = copy.manualProxyRouteSummary
+                updateWorkflowStep(.systemProxy, state: .success, detail: copy.systemProxySkippedDetail)
             }
             try Task.checkCancellation()
 
             activeConnectionContext = ActiveConnectionContext(
-                mode: connectionMode,
-                systemProxyEnabled: connectionMode == .proxy ? enableSystemProxyInProxyMode : false,
+                systemProxyEnabled: enableSystemProxyInProxyMode,
                 localProxyPort: localProxyPort,
                 socksPort: socksPort,
                 httpPort: httpPort,
@@ -609,33 +444,28 @@ final class TunnelController: ObservableObject {
             )
             isConnected = true
             applyConnectedStatusPresentation(
-                for: connectionMode,
                 socksPort: socksPort,
                 isProbeRunning: false,
-                systemProxyEnabled: connectionMode == .proxy ? enableSystemProxyInProxyMode : nil
+                systemProxyEnabled: enableSystemProxyInProxyMode
             )
 
             updateWorkflowStep(
                 .probe,
                 state: .running,
-                detail: connectionMode == .proxy
-                    ? copy.proxyProbeDetail
-                    : copy.tunnelProbeDetail
+                detail: copy.proxyProbeDetail
             )
             applyConnectedStatusPresentation(
-                for: connectionMode,
                 socksPort: socksPort,
                 isProbeRunning: true,
-                systemProxyEnabled: connectionMode == .proxy ? enableSystemProxyInProxyMode : nil
+                systemProxyEnabled: enableSystemProxyInProxyMode
             )
-            let reachableURL = try await runConnectivityProbe(httpPort: httpPort, mode: connectionMode)
+            let reachableURL = try await runConnectivityProbe(httpPort: httpPort)
             lastProbeDescription = reachableURL.absoluteString
             updateWorkflowStep(.probe, state: .success, detail: "Probe success: \(reachableURL.host ?? reachableURL.absoluteString)")
             applyConnectedStatusPresentation(
-                for: connectionMode,
                 socksPort: socksPort,
                 isProbeRunning: false,
-                systemProxyEnabled: connectionMode == .proxy ? enableSystemProxyInProxyMode : nil
+                systemProxyEnabled: enableSystemProxyInProxyMode
             )
             appendLog(level: .info, source: "app", message: "Connection workflow completed successfully")
         } catch is CancellationError {
@@ -648,24 +478,6 @@ final class TunnelController: ObservableObject {
             isConnected = false
         } catch {
             let description = error.localizedDescription
-            if connectionMode == .tunnel, case ConnectionWorkflowError.connectivityProbe = error {
-                lastProbeDescription = description
-                updateWorkflowStep(.probe, state: .failure, detail: description)
-                connectionHeadline = copy.vpnIsOnHeadline
-                connectionDetail = copy.probeFailedDetail
-                appendLog(level: .error, source: "probe", message: description)
-                appendLog(level: .info, source: "app", message: "Tunnel kept alive despite probe failure")
-                return
-            }
-            if selectedConnectionMode == .tunnel {
-                let snapshot = xrayManager.recentOutputSnapshot().trimmingCharacters(in: .whitespacesAndNewlines)
-                if !snapshot.isEmpty {
-                    appendLog(level: .debug, source: "xray", message: "Xray output snapshot | \(snapshot.prefix(4000))")
-                }
-                if let manager {
-                    appendLog(level: .debug, source: "provider", message: Self.describeManager(manager, label: "tunnel-failure-state"))
-                }
-            }
             recordWorkflowFailure(error, description: description)
             lastErrorDescription = description
             connectionHeadline = copy.connectionFailedHeadline
@@ -819,148 +631,6 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    private func startManagedTunnelSession() async throws -> TunnelProviderStatus {
-        do {
-            return try await startManagedTunnelSessionAttempt(allowManagerResetRetry: true)
-        } catch {
-            appendLog(level: .error, source: "provider", message: "Tunnel startup failed | \(Self.debugDescription(for: error))")
-            throw ConnectionWorkflowError.systemProxy(Self.describeTunnelStartupError(error))
-        }
-    }
-
-    private func startManagedTunnelSessionAttempt(allowManagerResetRetry: Bool) async throws -> TunnelProviderStatus {
-        appendLog(level: .debug, source: "provider", message: "Preparing NETunnelProviderManager | retryAllowed=\(allowManagerResetRetry)")
-        let preparedManager = try await prepareManagerForUse()
-        appendLog(level: .debug, source: "provider", message: Self.describeManager(preparedManager, label: "before-save"))
-        try await Self.saveManager(preparedManager)
-        appendLog(level: .debug, source: "provider", message: "Manager saveToPreferences completed")
-        try await Self.loadManager(preparedManager)
-        appendLog(level: .debug, source: "provider", message: "Manager loadFromPreferences completed")
-        manager = preparedManager
-        applyManagerConfiguration(preparedManager)
-        installStatusObserver()
-        appendLog(level: .debug, source: "provider", message: Self.describeManager(preparedManager, label: "after-load"))
-
-        if preparedManager.connection.status == .connected || preparedManager.connection.status == .connecting {
-            appendLog(level: .info, source: "provider", message: "Existing tunnel status=\(Self.describeConnectionStatus(preparedManager.connection.status)); stopping before restart")
-            preparedManager.connection.stopVPNTunnel()
-            try await waitForTunnelDisconnect(on: preparedManager, timeout: 5)
-        }
-
-        guard let session = preparedManager.connection as? NETunnelProviderSession else {
-            throw TunnelControllerError.invalidSession
-        }
-
-        do {
-            appendLog(level: .info, source: "provider", message: "Calling startVPNTunnel | bundle=\(TunnelConfiguration.providerBundleIdentifier)")
-            try session.startVPNTunnel()
-            appendLog(level: .debug, source: "provider", message: "startVPNTunnel returned without throwing")
-            updateConnectionStatus()
-            let status = try await waitForTunnelConnection(on: preparedManager, timeout: 12)
-            appendLog(level: .info, source: "provider", message: "Tunnel session connected")
-            return status
-        } catch {
-            appendLog(level: .error, source: "provider", message: "startVPNTunnel/wait failed | \(Self.debugDescription(for: error))")
-            if allowManagerResetRetry, Self.shouldRetryTunnelStartupAfterManagerReset(error) {
-                appendLog(level: .info, source: "provider", message: "Resetting stale VPN manager and retrying tunnel startup once")
-                try await resetManagedPreferences()
-                return try await startManagedTunnelSessionAttempt(allowManagerResetRetry: false)
-            }
-            throw error
-        }
-    }
-
-    private func stopManagedTunnelIfNeeded() async throws {
-        guard let manager else {
-            return
-        }
-
-        let status = manager.connection.status
-        guard status == .connected || status == .connecting || status == .reasserting || status == .disconnecting else {
-            return
-        }
-
-        manager.connection.stopVPNTunnel()
-        try await waitForTunnelDisconnect(on: manager, timeout: 8)
-        providerStatusDescription = "Tunnel stopped"
-        appendLog(level: .info, source: "provider", message: "Tunnel session stopped")
-    }
-
-    private func waitForTunnelConnection(on manager: NETunnelProviderManager, timeout: TimeInterval) async throws -> TunnelProviderStatus {
-        let deadline = Date().addingTimeInterval(timeout)
-        var lastObservedStatus = manager.connection.status
-        var lastProviderFetchError: Error?
-        var sawTransitionalOrConnectedState = false
-        let disconnectedGraceDeadline = Date().addingTimeInterval(2.0)
-        while Date() < deadline {
-            updateConnectionStatus()
-            let currentStatus = manager.connection.status
-            if currentStatus != lastObservedStatus {
-                appendLog(level: .debug, source: "provider", message: "Tunnel status changed -> \(Self.describeConnectionStatus(currentStatus))")
-                lastObservedStatus = currentStatus
-            }
-
-            switch currentStatus {
-            case .connected:
-                sawTransitionalOrConnectedState = true
-                do {
-                    let status = try await fetchProviderStatus()
-                    appendLog(level: .debug, source: "provider", message: "Provider status fetched | \(Self.describeProviderStatus(status))")
-                    return status
-                } catch {
-                    lastProviderFetchError = error
-                    appendLog(level: .debug, source: "provider", message: "Provider status fetch failed | \(Self.debugDescription(for: error))")
-                }
-            case .connecting, .reasserting, .disconnecting:
-                sawTransitionalOrConnectedState = true
-            case .invalid, .disconnected:
-                if !sawTransitionalOrConnectedState && Date() < disconnectedGraceDeadline {
-                    break
-                }
-                let providerErrorSuffix: String
-                if let lastProviderFetchError {
-                    providerErrorSuffix = " | providerMessage=\(Self.debugDescription(for: lastProviderFetchError))"
-                } else {
-                    providerErrorSuffix = ""
-                }
-                throw ConnectionWorkflowError.systemProxy("The packet tunnel could not connect. status=\(Self.describeConnectionStatus(currentStatus))\(providerErrorSuffix)")
-            default:
-                break
-            }
-
-            try await Task.sleep(nanoseconds: 250_000_000)
-        }
-
-        let timeoutSuffix: String
-        if let lastProviderFetchError {
-            timeoutSuffix = " | providerMessage=\(Self.debugDescription(for: lastProviderFetchError))"
-        } else {
-            timeoutSuffix = ""
-        }
-        throw ConnectionWorkflowError.systemProxy("Timed out waiting for packet tunnel connection. lastStatus=\(Self.describeConnectionStatus(lastObservedStatus))\(timeoutSuffix)")
-    }
-
-    private func waitForTunnelDisconnect(on manager: NETunnelProviderManager, timeout: TimeInterval) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            updateConnectionStatus()
-            let status = manager.connection.status
-            if status == .disconnected || status == .invalid {
-                return
-            }
-            try await Task.sleep(nanoseconds: 250_000_000)
-        }
-        throw ConnectionWorkflowError.systemProxy("Timed out waiting for packet tunnel stop.")
-    }
-
-    private func fetchProviderStatus() async throws -> TunnelProviderStatus {
-        let session = try requireSession()
-        let responseData = try await Self.sendMessage(
-            TunnelAppMessage(command: .getStatus),
-            using: session
-        )
-        return try TunnelIPC.decode(TunnelProviderStatus.self, from: responseData)
-    }
 
     private func enableSystemProxy(httpPort: Int, socksPort: Int) async throws -> [String] {
         let services = try await Self.listActiveNetworkServices()
@@ -1005,28 +675,16 @@ final class TunnelController: ObservableObject {
         appendLog(level: .info, source: "system", message: "System proxy disabled")
     }
 
-    private func runConnectivityProbe(httpPort: Int, mode: AppConnectionMode) async throws -> URL {
-        if mode == .tunnel {
-            appendLog(level: .debug, source: "probe", message: "Tunnel probe warmup started")
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-        }
-
-        let attempts = mode == .tunnel ? 2 : 1
+    private func runConnectivityProbe(httpPort: Int) async throws -> URL {
         var lastError: Error?
-        for attempt in 1 ... attempts {
-            for url in Self.connectivityProbeURLs {
-                do {
-                    try await Self.probe(url: url, httpPort: httpPort, mode: mode)
-                    appendLog(level: .info, source: "probe", message: "Connectivity probe succeeded: \(url.absoluteString)")
-                    return url
-                } catch {
-                    lastError = error
-                    appendLog(level: .debug, source: "probe", message: "Probe attempt \(attempt) failed for \(url.absoluteString): \(error.localizedDescription)")
-                }
-            }
-
-            if attempt < attempts {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+        for url in Self.connectivityProbeURLs {
+            do {
+                try await Self.probe(url: url, httpPort: httpPort)
+                appendLog(level: .info, source: "probe", message: "Connectivity probe succeeded: \(url.absoluteString)")
+                return url
+            } catch {
+                lastError = error
+                appendLog(level: .debug, source: "probe", message: "Probe failed for \(url.absoluteString): \(error.localizedDescription)")
             }
         }
 
@@ -1063,28 +721,20 @@ final class TunnelController: ObservableObject {
 
     private func disconnectWorkflowResources(cleanupState: ConnectionResourceState? = nil) async throws {
         var failures: [String] = []
-        let cleanupMode = cleanupState?.mode ?? activeConnectionContext?.mode ?? selectedConnectionMode
-        let shouldStopTunnel = cleanupState?.tunnelStarted ?? (manager?.connection.status == .connected || manager?.connection.status == .connecting || manager?.connection.status == .reasserting || manager?.connection.status == .disconnecting)
-        let shouldDisableProxy = cleanupState?.systemProxyEnabled ?? (cleanupMode == .proxy && activeConnectionContext?.systemProxyEnabled == true)
-        let shouldRestoreDNS = cleanupState?.dnsApplied ?? (cleanupMode == .tunnel && activeDNSConfigurationSnapshot != nil)
+        let shouldDisableProxy = cleanupState?.systemProxyEnabled ?? activeConnectionContext?.systemProxyEnabled == true
+        let shouldRestoreDNS = cleanupState?.dnsApplied ?? activeDNSConfigurationSnapshot != nil
         let shouldStopXray = cleanupState?.xrayStarted ?? xrayManager.isRunning
         let shouldStopHelper = cleanupState?.helperStarted ?? isPrivilegedHelperRunning
 
-        if shouldStopTunnel {
-            do {
-                try await stopManagedTunnelIfNeeded()
-            } catch {
-                failures.append("tunnel: \(error.localizedDescription)")
-            }
-        }
-
-        if cleanupMode == .proxy, shouldDisableProxy {
+        if shouldDisableProxy {
             do {
                 try await disableSystemProxy()
             } catch {
                 failures.append("system proxy: \(error.localizedDescription)")
             }
-        } else if cleanupMode == .tunnel, shouldRestoreDNS {
+        }
+
+        if shouldRestoreDNS {
             do {
                 try await restoreSystemDNSIfNeeded()
             } catch {
@@ -1125,15 +775,8 @@ final class TunnelController: ObservableObject {
 
     private func bestEffortShutdownForTermination() {
         if isConnected || isPrivilegedHelperRunning || xrayManager.isRunning {
-            manager?.connection.stopVPNTunnel()
-            if (activeConnectionContext?.mode ?? selectedConnectionMode) == .proxy {
-                Task { [weak self] in
-                    try? await self?.disableSystemProxy()
-                }
-            } else if (activeConnectionContext?.mode ?? selectedConnectionMode) == .tunnel {
-                Task { [weak self] in
-                    try? await self?.restoreSystemDNSIfNeeded()
-                }
+            Task { [weak self] in
+                try? await self?.disableSystemProxy()
             }
             xrayManager.stop()
             Task { [weak self] in
@@ -1233,94 +876,19 @@ final class TunnelController: ObservableObject {
         configuration.logLevel.rawValue.uppercased()
     }
 
-    private func applyConnectedStatusPresentation(for mode: AppConnectionMode, socksPort: Int? = nil, isProbeRunning: Bool, systemProxyEnabled: Bool? = nil) {
-        switch mode {
-        case .proxy:
-            let resolvedPort = socksPort ?? activeConnectionContext?.socksPort ?? configuration.socksProxyPort
-            let proxyIsSystemWide = systemProxyEnabled ?? activeConnectionContext?.systemProxyEnabled ?? false
-            if let resolvedPort {
-                connectionHeadline = copy.socksProxyUpHeadline(host: "127.0.0.1", port: resolvedPort)
-            } else {
-                connectionHeadline = copy.proxyConnectedHeadline
-            }
-            connectionDetail = isProbeRunning
-                ? copy.probingProxyDetail
-                : (proxyIsSystemWide ? copy.proxyCompleteDetail : copy.manualProxyCompleteDetail)
-        case .tunnel:
-            connectionHeadline = copy.vpnIsOnHeadline
-            connectionDetail = isProbeRunning ? copy.probingTunnelDetail : copy.tunnelCompleteDetail
+    private func applyConnectedStatusPresentation(socksPort: Int? = nil, isProbeRunning: Bool, systemProxyEnabled: Bool? = nil) {
+        let resolvedPort = socksPort ?? activeConnectionContext?.socksPort ?? configuration.socksProxyPort
+        let proxyIsSystemWide = systemProxyEnabled ?? activeConnectionContext?.systemProxyEnabled ?? false
+        if let resolvedPort {
+            connectionHeadline = copy.socksProxyUpHeadline(host: "127.0.0.1", port: resolvedPort)
+        } else {
+            connectionHeadline = copy.proxyConnectedHeadline
         }
+        connectionDetail = isProbeRunning
+            ? copy.probingProxyDetail
+            : (proxyIsSystemWide ? copy.proxyCompleteDetail : copy.manualProxyCompleteDetail)
     }
 
-    private func prepareManagerForUse() async throws -> NETunnelProviderManager {
-        let manager = self.manager ?? NETunnelProviderManager()
-        let tunnelProtocol = NETunnelProviderProtocol()
-        tunnelProtocol.providerBundleIdentifier = TunnelConfiguration.providerBundleIdentifier
-        tunnelProtocol.serverAddress = configuration.connectIP
-        tunnelProtocol.providerConfiguration = configuration.providerConfigurationDictionary()
-
-        manager.localizedDescription = "SNI-Spoofing Client"
-        manager.protocolConfiguration = tunnelProtocol
-        manager.isEnabled = true
-        return manager
-    }
-
-    private func resetManagedPreferences() async throws {
-        let managers = try await Self.loadManagedManagers()
-        if !managers.isEmpty {
-            appendLog(level: .debug, source: "provider", message: "Removing managed VPN profiles | count=\(managers.count)")
-            try await Self.removeManagers(managers)
-        }
-        manager = NETunnelProviderManager()
-        managerStatusDescription = copy.vpnPreferencesReset
-    }
-
-    private func applyManagerConfiguration(_ manager: NETunnelProviderManager) {
-        guard let tunnelProtocol = manager.protocolConfiguration as? NETunnelProviderProtocol else {
-            return
-        }
-
-        configuration = TunnelConfiguration(providerConfiguration: tunnelProtocol.providerConfiguration)
-        selectedConnectionMode = .proxy
-    }
-
-    private func requireSession() throws -> NETunnelProviderSession {
-        guard let manager else {
-            throw TunnelControllerError.managerUnavailable
-        }
-        guard let session = manager.connection as? NETunnelProviderSession else {
-            throw TunnelControllerError.invalidSession
-        }
-        return session
-    }
-
-    private func installStatusObserver() {
-        if let statusObserver {
-            NotificationCenter.default.removeObserver(statusObserver)
-        }
-
-        statusObserver = NotificationCenter.default.addObserver(
-            forName: .NEVPNStatusDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                if let manager = self?.manager {
-                    self?.appendLog(level: .debug, source: "provider", message: "NEVPNStatusDidChange | \(Self.describeConnectionStatus(manager.connection.status))")
-                }
-                self?.updateConnectionStatus()
-            }
-        }
-    }
-
-    private func updateConnectionStatus() {
-        guard let manager else {
-            managerStatusDescription = copy.managerNotLoaded
-            return
-        }
-
-        managerStatusDescription = copy.connectionStatusDescription(Self.describeConnectionStatus(manager.connection.status))
-    }
 
     private func consumeNativeStatus(_ status: NativeProxyStatus, source: String) {
         proxyPhase = status.phase
@@ -1351,12 +919,6 @@ final class TunnelController: ObservableObject {
             )
         }
         appendLog(level: status.logLevel, source: source, message: Self.describeNativeProxyStatus(status))
-    }
-
-    private func consumeTunnelStatus(_ status: TunnelProviderStatus, source: String) {
-        providerStatusDescription = Self.describeProviderStatus(status)
-        updateSpeeds(up: status.bytesUploaded, down: status.bytesDownloaded)
-        appendLog(level: .debug, source: source, message: Self.describeProviderStatus(status))
     }
 
     func noteDiagnosticDumpCopied(byteCount: Int, path: String) {
@@ -1564,7 +1126,6 @@ final class TunnelController: ObservableObject {
         var lines: [String] = []
         lines.append("=== SNI-Spoofing Client Diagnostic Dump ===")
         lines.append("Generated at: \(formatter.string(from: Date()))")
-        lines.append("Mode: \(copy.connectionModeTitle(selectedConnectionMode))")
         lines.append("Proxy auto-config enabled: \(enableSystemProxyInProxyMode)")
         lines.append("Headline: \(connectionHeadline)")
         lines.append("Detail: \(connectionDetail)")
@@ -1598,7 +1159,6 @@ final class TunnelController: ObservableObject {
         lines.append("  upstreamIP=\(configuration.upstreamIP)")
         lines.append("  upstreamPort=\(configuration.upstreamPort)")
         lines.append("  fakeSNI=\(configuration.fakeSNI)")
-        lines.append("  connectionMode=\(configuration.connectionMode.rawValue)")
         lines.append("  httpProxyPort=\(configuration.httpProxyPort.map(String.init) ?? "-")")
         lines.append("  socksProxyPort=\(configuration.socksProxyPort.map(String.init) ?? "-")")
         lines.append("  dnsServers=\(configuration.dnsServers.isEmpty ? "none" : configuration.dnsServers.joined(separator: ","))")
@@ -1606,7 +1166,6 @@ final class TunnelController: ObservableObject {
 
         if let context = activeConnectionContext {
             lines.append("Active context:")
-            lines.append("  mode=\(context.mode.rawValue)")
             lines.append("  localProxyPort=\(context.localProxyPort)")
             lines.append("  socksPort=\(context.socksPort)")
             lines.append("  httpPort=\(context.httpPort)")
@@ -1830,25 +1389,6 @@ final class TunnelController: ObservableObject {
         lastSpeedUpdate = now
     }
 
-    private static func describeConnectionStatus(_ status: NEVPNStatus) -> String {
-        switch status {
-        case .invalid:
-            return "invalid"
-        case .disconnected:
-            return "disconnected"
-        case .connecting:
-            return "connecting"
-        case .connected:
-            return "connected"
-        case .reasserting:
-            return "reasserting"
-        case .disconnecting:
-            return "disconnecting"
-        @unknown default:
-            return "unknown"
-        }
-    }
-
     private static func reserveAvailableLocalTCPPort() throws -> Int {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else {
@@ -1890,48 +1430,6 @@ final class TunnelController: ObservableObject {
         return Int(UInt16(bigEndian: boundAddress.sin_port))
     }
 
-    private static func describeProviderStatus(_ status: TunnelProviderStatus) -> String {
-        var parts = [
-            "phase=\(status.phase)",
-            "packets=\(status.packetCount)",
-            "up=\(status.bytesUploaded)",
-            "down=\(status.bytesDownloaded)",
-            "target=\(status.connectIP):\(status.connectPort)",
-            "sni=\(status.fakeSNI)",
-        ]
-        if let detail = status.detail, !detail.isEmpty {
-            parts.append("detail=\(detail)")
-        }
-        if let startedAtISO8601 = status.startedAtISO8601, !startedAtISO8601.isEmpty {
-            parts.append("started=\(startedAtISO8601)")
-        }
-        return parts.joined(separator: " | ")
-    }
-
-    private static func describeManager(_ manager: NETunnelProviderManager, label: String) -> String {
-        let proto = manager.protocolConfiguration as? NETunnelProviderProtocol
-        let providerBundleID = proto?.providerBundleIdentifier ?? "-"
-        let serverAddress = proto?.serverAddress ?? "-"
-        let keys = (proto?.providerConfiguration?.keys.map { "\($0)" }.sorted() ?? []).joined(separator: ",")
-        return "\(label) | enabled=\(manager.isEnabled) | status=\(describeConnectionStatus(manager.connection.status)) | localizedDescription=\(manager.localizedDescription ?? "-") | bundle=\(providerBundleID) | server=\(serverAddress) | providerConfigKeys=[\(keys)]"
-    }
-
-    private static func isManagedManager(_ manager: NETunnelProviderManager) -> Bool {
-        guard let tunnelProtocol = manager.protocolConfiguration as? NETunnelProviderProtocol else {
-            return false
-        }
-
-        if tunnelProtocol.providerBundleIdentifier == TunnelConfiguration.providerBundleIdentifier {
-            return true
-        }
-
-        return manager.localizedDescription == "SNI-Spoofing Client"
-    }
-
-    private static func loadManagedManagers() async throws -> [NETunnelProviderManager] {
-        try await loadManagers().filter(Self.isManagedManager)
-    }
-
     private static func describeNativeProxyStatus(_ status: NativeProxyStatus) -> String {
         var parts = [
             "phase=\(status.phase)",
@@ -1948,79 +1446,8 @@ final class TunnelController: ObservableObject {
         return parts.joined(separator: " | ")
     }
 
-    private static func loadManagers() async throws -> [NETunnelProviderManager] {
-        try await withCheckedThrowingContinuation { continuation in
-            NETunnelProviderManager.loadAllFromPreferences { managers, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: managers ?? [])
-            }
-        }
-    }
 
-    private static func loadManager(_ manager: NETunnelProviderManager) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.loadFromPreferences { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: ())
-            }
-        }
-    }
 
-    private static func saveManager(_ manager: NETunnelProviderManager) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.saveToPreferences { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: ())
-            }
-        }
-    }
-
-    private static func removeManager(_ manager: NETunnelProviderManager) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.removeFromPreferences { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: ())
-            }
-        }
-    }
-
-    private static func removeManagers(_ managers: [NETunnelProviderManager]) async throws {
-        for manager in managers {
-            try await removeManager(manager)
-        }
-    }
-
-    private static func sendMessage(
-        _ message: TunnelAppMessage,
-        using session: NETunnelProviderSession
-    ) async throws -> Data {
-        let encoded = try TunnelIPC.encode(message)
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try session.sendProviderMessage(encoded) { responseData in
-                    guard let responseData else {
-                        continuation.resume(throwing: TunnelControllerError.emptyProviderResponse)
-                        return
-                    }
-                    continuation.resume(returning: responseData)
-                }
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
-    }
 
     private static func makeDefaultWorkflowSteps() -> [ConnectionWorkflowStep] {
         ConnectionWorkflowStepKey.allCases.map { key in
@@ -2192,23 +1619,18 @@ final class TunnelController: ObservableObject {
         try await Self.runPrivilegedShell(commands.joined(separator: "; "))
     }
 
-    private static func probe(url: URL, httpPort: Int, mode: AppConnectionMode) async throws {
+    private static func probe(url: URL, httpPort: Int) async throws {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = mode == .tunnel ? 12 : 8
-        config.timeoutIntervalForResource = mode == .tunnel ? 18 : 12
-        // In proxy mode we probe through explicit local proxy.
-        // In tunnel mode we intentionally probe without explicit proxy dictionary
-        // so the check reflects real system route/tunnel behavior.
-        if mode == .proxy {
-            config.connectionProxyDictionary = [
-                "HTTPEnable": 1,
-                "HTTPProxy": "127.0.0.1",
-                "HTTPPort": httpPort,
-                "HTTPSEnable": 1,
-                "HTTPSProxy": "127.0.0.1",
-                "HTTPSPort": httpPort,
-            ]
-        }
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 12
+        config.connectionProxyDictionary = [
+            "HTTPEnable": 1,
+            "HTTPProxy": "127.0.0.1",
+            "HTTPPort": httpPort,
+            "HTTPSEnable": 1,
+            "HTTPSProxy": "127.0.0.1",
+            "HTTPSPort": httpPort,
+        ]
 
         let session = URLSession(configuration: config)
         defer {
@@ -2288,17 +1710,6 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    private static func shouldRetryTunnelStartupAfterManagerReset(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        let loweredDescription = nsError.localizedDescription.lowercased()
-        let loweredDomain = nsError.domain.lowercased()
-
-        if loweredDescription.contains("not installed") || loweredDescription.contains("plugin") {
-            return true
-        }
-
-        return loweredDomain.contains("networkextension") && nsError.code == 1
-    }
 
     private static func debugDescription(for error: Error) -> String {
         let nsError = error as NSError
@@ -2319,29 +1730,6 @@ final class TunnelController: ObservableObject {
         return parts.joined(separator: " | ")
     }
 
-    private static func describeTunnelStartupError(_ error: Error) -> String {
-        let nsError = error as NSError
-        let loweredDescription = nsError.localizedDescription.lowercased()
-        let loweredDomain = nsError.domain.lowercased()
-
-        let looksLikePermissionDenied =
-            loweredDescription.contains("permission denied") ||
-            (nsError.code == 5 && (loweredDomain.contains("nevpn") || loweredDomain.contains("networkextension")))
-
-        if looksLikePermissionDenied {
-            return "Tunnel mode requires a signed app with the `packet-tunnel-provider` entitlement. This build is likely unsigned, the team/signing configuration is missing, or the VPN prompt has not been approved."
-        }
-
-        if loweredDescription.contains("configuration disabled") {
-            return "The VPN configuration is disabled. Run the app with valid signing and approve the tunnel permission again."
-        }
-
-        if loweredDescription.contains("not installed") {
-            return "The VPN provider is not installed, or the app extension package did not load correctly. Check the build and install process again."
-        }
-
-        return nsError.localizedDescription
-    }
 
     @MainActor
     private static var cachedAdminPassword: String? = nil

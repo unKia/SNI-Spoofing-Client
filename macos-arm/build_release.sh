@@ -46,7 +46,7 @@ main_build_args=(
 )
 
 if [ "${ALLOW_UNSIGNED_APP_BUILD:-0}" = "1" ]; then
-  echo "Unsigned release build requested. Tunnel mode distribution baraye user niaz be signing darad."
+  echo "Unsigned release build requested."
 fi
 
 xcodebuild "${main_build_args[@]}" build

@@ -24,29 +24,6 @@ enum ProxyLogLevel: String, Codable, Equatable {
     }
 }
 
-enum AppConnectionMode: String, Codable, Equatable, CaseIterable, Identifiable {
-    case proxy
-    case tunnel
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .proxy:
-            return "Proxy"
-        case .tunnel:
-            return "Tunnel"
-        }
-    }
-
-    static func parse(_ rawValue: String?) -> AppConnectionMode {
-        guard let rawValue else {
-            return .proxy
-        }
-        return AppConnectionMode(rawValue: rawValue.lowercased()) ?? .proxy
-    }
-}
-
 struct TunnelConfiguration: Codable, Equatable {
     static let providerBundleIdentifier = "com.local.sni.macos.packet-tunnel"
     // Fallback only. Real helper port is chosen dynamically per connection attempt.
@@ -63,7 +40,6 @@ struct TunnelConfiguration: Codable, Equatable {
         upstreamPort: stageOneProxyPort,
         fakeSNI: "hcaptcha.com",
         logLevel: .info,
-        connectionMode: .proxy,
         httpProxyPort: nil,
         socksProxyPort: nil,
         dnsServers: [],
@@ -78,7 +54,6 @@ struct TunnelConfiguration: Codable, Equatable {
     var upstreamPort: Int
     var fakeSNI: String
     var logLevel: ProxyLogLevel
-    var connectionMode: AppConnectionMode
     var httpProxyPort: Int?
     var socksProxyPort: Int?
     var dnsServers: [String]
@@ -93,7 +68,6 @@ struct TunnelConfiguration: Codable, Equatable {
         upstreamPort: Int,
         fakeSNI: String,
         logLevel: ProxyLogLevel,
-        connectionMode: AppConnectionMode,
         httpProxyPort: Int?,
         socksProxyPort: Int?,
         dnsServers: [String],
@@ -107,7 +81,6 @@ struct TunnelConfiguration: Codable, Equatable {
         self.upstreamPort = upstreamPort
         self.fakeSNI = fakeSNI
         self.logLevel = logLevel
-        self.connectionMode = connectionMode
         self.httpProxyPort = httpProxyPort
         self.socksProxyPort = socksProxyPort
         self.dnsServers = dnsServers
@@ -124,7 +97,6 @@ struct TunnelConfiguration: Codable, Equatable {
         self.upstreamPort = (providerConfiguration?["upstreamPort"] as? NSNumber)?.intValue ?? defaults.upstreamPort
         self.fakeSNI = providerConfiguration?["fakeSNI"] as? String ?? defaults.fakeSNI
         self.logLevel = ProxyLogLevel.parse(providerConfiguration?["logLevel"] as? String)
-        self.connectionMode = AppConnectionMode.parse(providerConfiguration?["connectionMode"] as? String)
         self.httpProxyPort = (providerConfiguration?["httpProxyPort"] as? NSNumber)?.intValue
         self.socksProxyPort = (providerConfiguration?["socksProxyPort"] as? NSNumber)?.intValue
         self.dnsServers = providerConfiguration?["dnsServers"] as? [String] ?? defaults.dnsServers
@@ -141,7 +113,6 @@ struct TunnelConfiguration: Codable, Equatable {
             "upstreamPort": NSNumber(value: upstreamPort),
             "fakeSNI": fakeSNI as NSString,
             "logLevel": logLevel.rawValue as NSString,
-            "connectionMode": connectionMode.rawValue as NSString,
         ]
 
         if let httpProxyPort {

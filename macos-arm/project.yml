@@ -9,7 +9,6 @@ schemes:
       targets:
         SniSpoofingMac: all
         SniProxyHelper: [run, test, profile, analyze, archive]
-        SniPacketTunnel: [run, test, profile, analyze, archive]
     run:
       config: Debug
       executable: SniSpoofingMac
@@ -72,10 +71,7 @@ targets:
           - $(inherited)
           - -lpcap
     dependencies:
-      - sdk: NetworkExtension.framework
       - target: SniProxyHelper
-      - target: SniPacketTunnel
-        embed: true
   SniProxyHelper:
     type: tool
     platform: macOS
@@ -96,34 +92,3 @@ targets:
         OTHER_LDFLAGS:
           - $(inherited)
           - -lpcap
-  SniPacketTunnel:
-    type: app-extension
-    platform: macOS
-    sources:
-      - path: PacketTunnel/PacketTunnelProvider.swift
-      - path: PacketTunnel/TunnelTrafficBridge.swift
-      - path: PacketTunnel/PacketParser.swift
-      - path: PacketTunnel/SpoofingEngine.swift
-      - path: Shared/TunnelConfiguration.swift
-      - path: Shared/TunnelMessages.swift
-      - path: Shared/TLSClientHelloBuilder.swift
-    info:
-      path: PacketTunnel/Info.plist
-      properties:
-        CFBundleDisplayName: SNI Packet Tunnel
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
-    settings:
-      base:
-        PRODUCT_NAME: PacketTunnel
-        PRODUCT_MODULE_NAME: PacketTunnel
-        PRODUCT_BUNDLE_IDENTIFIER: com.local.sni.macos.packet-tunnel
-        CODE_SIGN_ENTITLEMENTS: PacketTunnel/SniPacketTunnel.entitlements
-        CODE_SIGN_STYLE: Automatic
-        SKIP_INSTALL: NO
-    dependencies:
-      - sdk: NetworkExtension.framework
-      - sdk: Network.framework

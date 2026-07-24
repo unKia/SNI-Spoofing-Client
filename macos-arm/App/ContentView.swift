@@ -185,7 +185,6 @@ struct ContentView: View {
             Spacer()
 
             HStack(alignment: .center, spacing: 10) {
-                connectionModeSwitch
                 languageSelector
             }
         }
@@ -438,48 +437,6 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-    }
-
-    private var connectionModeSwitch: some View {
-        HStack(spacing: 0) {
-            ForEach(AppConnectionMode.allCases) { mode in
-                Button {
-                    guard !tunnelController.isBusy && !tunnelController.isConnected else { return }
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        tunnelController.selectedConnectionMode = mode
-                    }
-                } label: {
-                    Text(copy.connectionModeTitle(mode))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(tunnelController.selectedConnectionMode == mode ? Color.white : Color.textSecondary)
-                        .frame(width: 80, height: 32)
-                        .background(
-                            ZStack {
-                                if tunnelController.selectedConnectionMode == mode {
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                        .fill(Color(red: 30/255, green: 111/255, blue: 255/255))
-                                        .matchedGeometryEffect(id: "connectionModeSelection", in: selectionNamespace)
-                                        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
-                                }
-                            }
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(tunnelController.isBusy || tunnelController.isConnected)
-                .frame(maxHeight: .infinity)
-            }
-        }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.86))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.inputBorder, lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 5)
-        .accessibilityElement(children: .contain)
     }
 
     private var workflowSection: some View {
