@@ -350,7 +350,6 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .opacity(inputsLocked ? 0.6 : 1.0)
                         .disabled(inputsLocked)
-                    }
                 }
 
                 if tunnelController.isConnected {
@@ -384,7 +383,6 @@ struct ContentView: View {
                 if isWorkflowExpanded {
                     workflowSection
                 }
-
 
                 if !tunnelController.lastErrorDescription.isEmpty {
                     errorBanner(tunnelController.lastErrorDescription)
