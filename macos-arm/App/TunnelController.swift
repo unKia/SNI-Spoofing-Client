@@ -947,12 +947,12 @@ final class TunnelController: ObservableObject {
 
     private func startHelperLogPolling() {
         helperLogTimer?.invalidate()
-        helperLogTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
+        helperLogTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.pollHelperLogs()
             }
         }
-        helperLogTimer?.tolerance = 0.2
+        helperLogTimer?.tolerance = 0.5
         pollHelperLogs()
     }
 

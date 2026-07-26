@@ -262,7 +262,7 @@ final class LocalProxyService {
 
     private func emitTrafficStatusIfNeededLocked(phase: String) {
         let now = Date()
-        guard now.timeIntervalSince(lastTrafficStatusEmission) >= 0.25 else {
+        guard now.timeIntervalSince(lastTrafficStatusEmission) >= 1.0 else {
             return
         }
         lastTrafficStatusEmission = now
@@ -576,6 +576,7 @@ private final class PcapBypassMonitor {
         while running {
             do {
                 guard let frameData = try session?.nextPacket() else {
+                    usleep(10000)
                     continue
                 }
                 try handle(frameData)
