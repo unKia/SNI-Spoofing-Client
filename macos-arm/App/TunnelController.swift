@@ -270,6 +270,7 @@ final class TunnelController: ObservableObject {
                 self?.isUIActive = false
                 self?.pauseHelperLogPolling()
                 self?.localProxyService.pauseStatusUpdates()
+                self?.localProxyService.setUIActive(false)
             }
         }
         NotificationCenter.default.addObserver(
@@ -281,6 +282,7 @@ final class TunnelController: ObservableObject {
                 self?.isUIActive = false
                 self?.pauseHelperLogPolling()
                 self?.localProxyService.pauseStatusUpdates()
+                self?.localProxyService.setUIActive(false)
             }
         }
         NotificationCenter.default.addObserver(
@@ -292,6 +294,7 @@ final class TunnelController: ObservableObject {
                 self?.isUIActive = true
                 self?.resumeHelperLogPolling()
                 self?.localProxyService.resumeStatusUpdates()
+                self?.localProxyService.setUIActive(true)
                 self?.triggerImmediateStatusUpdate()
             }
         }
@@ -304,6 +307,7 @@ final class TunnelController: ObservableObject {
                 self?.isUIActive = false
                 self?.pauseHelperLogPolling()
                 self?.localProxyService.pauseStatusUpdates()
+                self?.localProxyService.setUIActive(false)
             }
         }
         NotificationCenter.default.addObserver(
@@ -315,6 +319,7 @@ final class TunnelController: ObservableObject {
                 self?.isUIActive = true
                 self?.resumeHelperLogPolling()
                 self?.localProxyService.resumeStatusUpdates()
+                self?.localProxyService.setUIActive(true)
                 self?.triggerImmediateStatusUpdate()
             }
         }

@@ -56,6 +56,7 @@ final class LocalProxyService {
     private var previousSessionsBytesDownloaded: Int = 0
     private var statusTimer: DispatchSourceTimer?
     private var lastTrafficStatusEmission = Date.distantPast
+    nonisolated(unsafe) private var isUIActive = true
 
     init(statusHandler: @escaping @Sendable (NativeProxyStatus) -> Void) {
         self.statusHandler = statusHandler
@@ -168,6 +169,12 @@ final class LocalProxyService {
         }
     }
 
+    func setUIActive(_ active: Bool) {
+        syncQueue.sync {
+            isUIActive = active
+        }
+    }
+
     private func stopLocked(detail: String) {
         running = false
         statusTimer?.cancel()
@@ -241,8 +248,9 @@ final class LocalProxyService {
                     self?.emitStatusLocked(phase: self?.running == true ? "running" : "stopped")
                 }
             } onTraffic: { [weak self] in
-                self?.syncQueue.async {
-                    self?.emitTrafficStatusIfNeededLocked(phase: "running")
+                self?.syncQueue.async { [weak self] in
+                    guard let self, self.isUIActive else { return }
+                    self.emitTrafficStatusIfNeededLocked(phase: "running")
                 }
             }
 
