@@ -193,7 +193,7 @@ struct ContentView: View {
     }
 
     private var mainCard: some View {
-        CleanCard(colorScheme: colorScheme) {
+        CleanCard(content: {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -207,10 +207,14 @@ struct ContentView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Spacer(minLength: 8)
+                    Spacer()
 
-                    statusBadge()
+                    HStack(alignment: .center, spacing: 10) {
+                        languageSelector
+                    }
                 }
+
+                statusBadge()
 
                 VStack(spacing: 18) {
                     HStack(spacing: 16) {
@@ -246,119 +250,41 @@ struct ContentView: View {
                             if tunnelController.vlessConfigInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text(copy.vlessConfigPlaceholder)
                                     .font(.system(size: 14, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(Color.textSecondary.opacity(0.65))
-                                    .padding(.horizontal, 18)
-                                    .padding(.top, 42)
-                                    .allowsHitTesting(false)
+                                    .foregroundStyle(Color.textSecondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 12)
                             }
 
-                            // The actual TextEditor (always present for layout, but invisible/blurred when masked)
                             TextEditor(text: $tunnelController.vlessConfigInput)
                                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.textPrimary)
                                 .scrollContentBackground(.hidden)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 34) // Make space for the top-right buttons
-                                .padding(.bottom, 10)
-                                .frame(minHeight: 110)
-                                .opacity(isVlessMasked ? 0.0 : (inputsLocked ? 0.6 : 1.0))
-                                .disabled(inputsLocked || isVlessMasked)
-                            
-                            // The "Smooth" Masked View (only shows when masked)
-                            if isVlessMasked {
-                                ScrollView {
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        maskedVlessText(tunnelController.vlessConfigInput)
-                                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(Color.textPrimary)
-                                            .padding(.horizontal, 16)
-                                            .padding(.top, 38)
-                                            .padding(.bottom, 14)
-                                    }
-                                }
-                                .frame(height: 110)
-                                .allowsHitTesting(false)
-                            }
-                            
-                            // Top-Right Control Buttons Overlay
-                            HStack(spacing: 6) {
-                                Button {
-                                    isVlessMasked.toggle()
-                                } label: {
-                                    Image(systemName: isVlessMasked ? "eye.slash" : "eye")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundStyle(Color.textSecondary)
-                                        .frame(width: 24, height: 24)
-                                        .background(Color(NSColor.alternatingContentBackgroundColors[0]).opacity(0.8))
-                                        .clipShape(Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .help(isVlessMasked ? "Show Config" : "Hide Config")
-                            }
-                            .padding(6)
-                            .frame(maxWidth: .infinity, alignment: .topTrailing)
-                            
-                            // Sharp Border (Always sharp, never blurred)
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(configFieldNeedsAttention ? Color.validationBorder : Color.inputBorder, lineWidth: 1)
-                                .allowsHitTesting(false)
-                            
-                            if inputsLocked && !isVlessMasked {
-                                Color(NSColor.controlBackgroundColor).opacity(0.01)
-                                    .onTapGesture {}
-                                    .onHover { _ in }
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            }
+                                .frame(minHeight: 80)
+                                .background(Color.clear)
                         }
+                        .padding(2)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .fill(Color.inputBackground)
                         )
-                        .animation(.easeInOut(duration: 0.2), value: isVlessMasked)
-                        .animation(.easeInOut(duration: 0.2), value: configFieldNeedsAttention)
-                    }
-
-                    Button {
-                        guard !inputsLocked else { return }
-                        tunnelController.enableSystemProxyInProxyMode.toggle()
-                    } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: tunnelController.enableSystemProxyInProxyMode ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(tunnelController.enableSystemProxyInProxyMode ? Color.accentColor : Color.textSecondary)
-                                    .padding(.top, 1)
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(copy.proxyAutoConfigTitle)
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundStyle(Color.textPrimary)
-                                    Text(copy.proxyAutoConfigSubtitle)
-                                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                                        .foregroundStyle(Color.textSecondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(NSColor.controlBackgroundColor))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.inputBorder, lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.inputBorder, lineWidth: 1)
+                        )
                         .opacity(inputsLocked ? 0.6 : 1.0)
                         .disabled(inputsLocked)
-                }
+                    }
 
-                if tunnelController.isConnected {
-                    ActiveProxyStatsView()
+                    actionButton(
+                        title: connectionActionPresentation().title,
+                        systemImage: connectionActionPresentation().systemImage,
+                        emphasis: .primary,
+                        isBusy: connectionActionPresentation().isBusy,
+                        isEnabled: connectionActionPresentation().isEnabled,
+                        action: connectionActionPresentation().action
+                    )
                 }
+                .padding(.top, 8)
 
                 HStack(alignment: .top, spacing: 14) {
                     compactSectionButton(
@@ -389,31 +315,94 @@ struct ContentView: View {
                 if isWorkflowExpanded {
                     workflowSection
                 }
-
-                if !tunnelController.lastErrorDescription.isEmpty {
-                    errorBanner(tunnelController.lastErrorDescription)
-                }
-
-                HStack(spacing: 12) {
-                    let connectionAction = connectionActionPresentation()
-                    actionButton(
-                        title: connectionAction.title,
-                        systemImage: connectionAction.systemImage,
-                        emphasis: .primary,
-                        isBusy: connectionAction.isBusy,
-                        isEnabled: connectionAction.isEnabled,
-                        action: connectionAction.action
-                    )
-
-                    actionButton(
-                        title: copy.logsTitle,
-                        systemImage: "text.justify",
-                        emphasis: .secondary,
-                        action: { isLogsPresented = true }
-                    )
-                }
             }
+        }, colorScheme: colorScheme)
+    }
+
+    private var logsSheet: some View {
+        VStack(spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(copy.logsTitle)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.textPrimary)
+
+                Spacer()
+
+                compactIconButton(
+                    systemImage: "xmark",
+                    accessibilityLabel: copy.closeLogsLabel,
+                    action: { isLogsPresented = false },
+                    colorScheme: colorScheme
+                )
+            }
+
+            HStack(spacing: 12) {
+                Picker(copy.filterPickerLabel, selection: $selectedLogFilter) {
+                    ForEach(LogFilter.allCases) { filter in
+                        Text(copy.logFilterTitle(filter.rawValue)).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+
+                Spacer()
+
+                HStack(spacing: 10) {
+                    compactIconButton(
+                        systemImage: "doc.on.doc",
+                        accessibilityLabel: copy.copyVisibleLogsLabel,
+                        action: copyVisibleLogs,
+                        colorScheme: colorScheme
+                    )
+
+                    compactIconButton(
+                        systemImage: "doc.richtext",
+                        accessibilityLabel: copy.copyDiagnosticDumpLabel,
+                        isBusy: isPreparingDiagnosticDump,
+                        isEnabled: !isPreparingDiagnosticDump,
+                        action: copyDiagnosticDump,
+                        colorScheme: colorScheme
+                    )
+
+                    compactIconButton(
+                        systemImage: "trash",
+                        accessibilityLabel: copy.clearLogsLabel,
+                        action: tunnelController.clearLogs,
+                        colorScheme: colorScheme
+                    )
+                }
+                .fixedSize()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if !diagnosticDumpStatusMessage.isEmpty {
+                Text(diagnosticDumpStatusMessage)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            CleanCard(content: {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        if visibleLogEntries.isEmpty {
+                            Text(copy.noLogsAvailable)
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.textSecondary)
+                                .frame(maxWidth: .infinity, minHeight: 280)
+                        } else {
+                            ForEach(visibleLogEntries.reversed()) { entry in
+                                logRow(entry)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }, colorScheme: colorScheme)
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 
     private var summarySection: some View {
@@ -580,7 +569,23 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                CleanCard(colorScheme: colorScheme) {
+                CleanCard(content: {
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            if visibleLogEntries.isEmpty {
+                                Text(copy.noLogsAvailable)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.textSecondary)
+                                    .frame(maxWidth: .infinity, minHeight: 280)
+                            } else {
+                                ForEach(visibleLogEntries.reversed()) { entry in
+                                    logRow(entry)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }, colorScheme: colorScheme)
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             if visibleLogEntries.isEmpty {
@@ -1209,7 +1214,7 @@ struct ContentView: View {
 
     private var languageSelector: some View {
         @Environment(\.colorScheme) var colorScheme
-        Button {
+        return Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                 isLanguageMenuExpanded.toggle()
             }
@@ -1492,6 +1497,7 @@ private struct CleanButtonStyle: ButtonStyle {
 struct ActiveProxyStatsView: View {
     @EnvironmentObject var tunnelController: TunnelController
     @EnvironmentObject var languageStore: AppLanguageStore
+    @Environment(\.colorScheme) private var colorScheme
 
     private var copy: AppCopy {
         AppCopy(language: languageStore.selectedLanguage)
