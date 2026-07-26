@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VERSION="$(tr -d '\n' < "$PWD/VERSION")"
+VERSION="$(grep 'MARKETING_VERSION:' project.yml | awk '{print $2}')"
 
 normalize_arch() {
   local raw_arch="${1:-}"

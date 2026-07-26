@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VERSION="$(tr -d '\n' < "$PWD/VERSION")"
+VERSION="$(grep 'MARKETING_VERSION:' project.yml | awk '{print $2}')"
 DIST_DIR="$PWD/dist"
 CHECKSUMS_PATH="${DIST_DIR}/checksums-v${VERSION}.txt"
 

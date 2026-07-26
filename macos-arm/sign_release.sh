@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VERSION="$(tr -d '\n' < "$PWD/VERSION")"
+VERSION="$(grep 'MARKETING_VERSION:' project.yml | awk '{print $2}')"
 SIGNING_IDENTITY="${MACOS_SIGN_IDENTITY:-}"
 APP_PROFILE_PATH="${MACOS_APP_PROFILE:-}"
 PACKET_TUNNEL_PROFILE_PATH="${MACOS_PACKET_TUNNEL_PROFILE:-}"
