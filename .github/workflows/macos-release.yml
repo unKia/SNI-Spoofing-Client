@@ -5,6 +5,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.2.3 - "v" will be added automatically)'
+        required: true
+        default: "1.0.0"
+        type: string
 
 jobs:
   build:
@@ -54,11 +60,20 @@ jobs:
         with:
           path: artifacts
 
+      - name: Set Release Tag Name
+        id: tag_name
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG_NAME=v${{ inputs.version }}" >> $GITHUB_ENV
+          else
+            echo "TAG_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
+          name: ${{ env.TAG_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
           draft: false
           prerelease: false
           files: artifacts/**/*.dmg
