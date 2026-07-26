@@ -209,12 +209,8 @@ struct ContentView: View {
 
                     Spacer()
 
-                    HStack(alignment: .center, spacing: 10) {
-                        languageSelector
-                    }
+                    statusBadge()
                 }
-
-                statusBadge()
 
                 VStack(spacing: 18) {
                     HStack(spacing: 16) {
@@ -275,16 +271,44 @@ struct ContentView: View {
                         .disabled(inputsLocked)
                     }
 
-                    actionButton(
-                        title: connectionActionPresentation().title,
-                        systemImage: connectionActionPresentation().systemImage,
-                        emphasis: .primary,
-                        isBusy: connectionActionPresentation().isBusy,
-                        isEnabled: connectionActionPresentation().isEnabled,
-                        action: connectionActionPresentation().action
-                    )
+                    HStack(spacing: 12) {
+                        actionButton(
+                            title: connectionActionPresentation().title,
+                            systemImage: connectionActionPresentation().systemImage,
+                            emphasis: .primary,
+                            isBusy: connectionActionPresentation().isBusy,
+                            isEnabled: connectionActionPresentation().isEnabled,
+                            action: connectionActionPresentation().action
+                        )
+
+                        Button {
+                            isLogsPresented = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 16, weight: .bold))
+                                Text(copy.logsTitle)
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(CleanButtonStyle(
+                            emphasis: .secondary,
+                            isBusy: false,
+                            busyTint: Color.accentColor,
+                            colorScheme: colorScheme
+                        ))
+                    }
                 }
                 .padding(.top, 8)
+
+                Toggle(isOn: $tunnelController.autoSetProxy) {
+                    Text(copy.autoSetProxyLabel)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.textPrimary)
+                }
+                .toggleStyle(.switch)
+                .padding(.vertical, 4)
 
                 HStack(alignment: .top, spacing: 14) {
                     compactSectionButton(
