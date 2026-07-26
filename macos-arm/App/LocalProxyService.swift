@@ -128,7 +128,7 @@ final class LocalProxyService {
             let timer = DispatchSource.makeTimerSource(queue: syncQueue)
             timer.schedule(deadline: .now() + 1, repeating: 1)
             timer.setEventHandler { [weak self] in
-                self?.emitStatusLocked(phase: "running")
+                self?.emitTrafficStatusIfNeededLocked(phase: "running")
             }
             timer.resume()
             statusTimer = timer
@@ -599,7 +599,7 @@ private final class PcapBypassMonitor {
         while running {
             do {
                 guard let frameData = try session?.nextPacket() else {
-                    usleep(50000)
+                    usleep(10000)
                     continue
                 }
                 try handle(frameData)
