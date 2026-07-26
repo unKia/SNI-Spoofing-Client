@@ -42,7 +42,7 @@ enum NativeProxyError: LocalizedError {
 
 final class LocalProxyService {
     private let statusHandler: @Sendable (NativeProxyStatus) -> Void
-    private let syncQueue = DispatchQueue(label: "com.local.sni.macos.local-proxy.sync")
+    private let syncQueue = DispatchQueue(label: "com.local.sni.macos.local-proxy.sync", qos: .utility)
     private var listenerFD: Int32 = -1
     private var acceptThread: Thread?
     private var running = false
@@ -285,13 +285,15 @@ private final class ProxyClientSession {
     private let statusHandler: (ResolvedInterface?, ProxyLogLevel, String) -> Void
     private let onFinish: (UUID, Int, Int) -> Void
     private let onTraffic: () -> Void
-    private let queue = DispatchQueue(label: "com.local.sni.macos.session", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.local.sni.macos.session", qos: .utility)
     private let lock = NSLock()
     private let trafficLock = NSLock()
     private var stopped = false
     private var outgoingFD: Int32 = -1
     private var bytesUploaded: Int = 0
     private var bytesDownloaded: Int = 0
+    private var accumulatedBytesSinceLastCallback: Int = 0
+    private let trafficCallbackThreshold = 65536
 
     init(
         incomingFD: Int32,
@@ -450,6 +452,7 @@ private final class ProxyClientSession {
 
     private func relay(sourceFD: Int32, destinationFD: Int32, isUpload: Bool) {
         var buffer = [UInt8](repeating: 0, count: 65536)
+        accumulatedBytesSinceLastCallback = 0
         while !isStopped {
             let received = Darwin.recv(sourceFD, &buffer, buffer.count, 0)
             if received <= 0 {
@@ -467,7 +470,7 @@ private final class ProxyClientSession {
                 }
                 sent += writeCount
             }
-            
+
             if isUpload {
                 trafficLock.lock()
                 bytesUploaded += received
@@ -477,7 +480,27 @@ private final class ProxyClientSession {
                 bytesDownloaded += received
                 trafficLock.unlock()
             }
+
+            trafficLock.lock()
+            accumulatedBytesSinceLastCallback += received
+            let shouldEmit = accumulatedBytesSinceLastCallback >= trafficCallbackThreshold
+            trafficLock.unlock()
+
+            if shouldEmit {
+                trafficLock.lock()
+                accumulatedBytesSinceLastCallback = 0
+                trafficLock.unlock()
+                onTraffic()
+            }
+        }
+
+        trafficLock.lock()
+        if accumulatedBytesSinceLastCallback > 0 {
+            accumulatedBytesSinceLastCallback = 0
+            trafficLock.unlock()
             onTraffic()
+        } else {
+            trafficLock.unlock()
         }
     }
 

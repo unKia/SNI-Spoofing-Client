@@ -167,6 +167,7 @@ final class TunnelController: ObservableObject {
     @Published var isBusy = false
     @Published private(set) var connectionOperation: ConnectionOperationState = .idle
     @Published var isPrivilegedHelperRunning = false
+    private var isAppActive = true
 
     private let xrayManager = XrayManager.shared
     private var terminationObserver: NSObjectProtocol?
@@ -213,6 +214,7 @@ final class TunnelController: ObservableObject {
         resetLogStateForFreshStart() // Ensure we start with a clean log view
         refreshHelperState()
         startHelperLogPolling()
+        setupAppActivityObservers()
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -229,6 +231,7 @@ final class TunnelController: ObservableObject {
         if let terminationObserver {
             NotificationCenter.default.removeObserver(terminationObserver)
         }
+        NotificationCenter.default.removeObserver(self)
         helperLogTimer?.invalidate()
     }
 
@@ -238,6 +241,23 @@ final class TunnelController: ObservableObject {
 
     func stopProxy() {
         Task { await stopPrivilegedHelper() }
+    }
+
+    private func setupAppActivityObservers() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isAppActive = true
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isAppActive = false
+        }
     }
 
     func startEmbeddedProxy() {
@@ -884,6 +904,9 @@ final class TunnelController: ObservableObject {
 
 
     private func consumeNativeStatus(_ status: NativeProxyStatus, source: String) {
+        guard isAppActive else {
+            return
+        }
         proxyPhase = status.phase
         proxyConnectionCount = status.activeConnections
         updateSpeeds(up: status.bytesUploaded, down: status.bytesDownloaded)
@@ -958,7 +981,9 @@ final class TunnelController: ObservableObject {
 
     private func pollHelperLogs() {
         refreshHelperState()
-        consumeHelperLogUpdates()
+        if isAppActive {
+            consumeHelperLogUpdates()
+        }
     }
 
     private func refreshHelperState() {
