@@ -493,7 +493,7 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(isHovered ? Color.accentCyan.opacity(0.3) : Color.inputBorder, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(isHovered ? 0.08 : 0), radius: 10, x: 0, y: 5)
+            .shadow(color: Color.primary.opacity(isHovered ? 0.08 : 0), radius: 10, x: 0, y: 5)
             .onHover(perform: onHover)
         }
         .buttonStyle(.plain)
@@ -777,7 +777,7 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(Color.inputBorder, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+            .shadow(color: Color.primary.opacity(0.03), radius: 4, x: 0, y: 2)
             .opacity(isEnabled ? 1 : 0.6)
         }
         .buttonStyle(.plain)
@@ -1117,7 +1117,7 @@ struct ContentView: View {
                     }
                 }
                 .foregroundStyle(Color(NSColor.textColor))
-                .shadow(color: Color.black.opacity(0.15), radius: 1, x: 0, y: 1)
+                .shadow(color: Color.primary.opacity(0.15), radius: 1, x: 0, y: 1)
             }
             .frame(width: 28, height: 28)
         }
@@ -1210,7 +1210,7 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color.inputBorder, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+                .shadow(color: Color.primary.opacity(0.04), radius: 8, x: 0, y: 3)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isLanguageMenuExpanded, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
@@ -1300,7 +1300,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: compact ? 18 : 20, style: .continuous)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(isSelected ? 0.04 : 0), radius: 10, x: 0, y: 4)
+        .shadow(color: Color.primary.opacity(isSelected ? 0.04 : 0), radius: 10, x: 0, y: 4)
     }
 }
 
@@ -1321,7 +1321,7 @@ private struct CleanCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 16, x: 0, y: 8)
+        .shadow(color: Color.primary.opacity(0.04), radius: 16, x: 0, y: 8)
     }
 }
 
@@ -1560,7 +1560,7 @@ struct LiveStatCard: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.02), radius: 8, x: 0, y: 4)
+        .shadow(color: Color.primary.opacity(0.02), radius: 8, x: 0, y: 4)
     }
 }
 

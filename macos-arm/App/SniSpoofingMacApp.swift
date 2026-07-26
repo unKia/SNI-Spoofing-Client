@@ -9,7 +9,6 @@ struct SniSpoofingMacApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .preferredColorScheme(.light)
                 .environmentObject(languageStore)
                 .environmentObject(tunnelController)
                 .environment(\.locale, languageStore.selectedLanguage.locale)
