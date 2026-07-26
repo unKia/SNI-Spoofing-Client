@@ -3,14 +3,6 @@ import AppKit
 import Darwin
 import Security
 
-struct ProxyLogEntry: Identifiable, Equatable {
-    let id = UUID()
-    let timestamp: Date
-    let level: ProxyLogLevel
-    let source: String
-    let message: String
-}
-
 enum ConnectionWorkflowStepKey: String, CaseIterable, Identifiable {
     case whitelist = "Whitelist"
     case vless = "VLESS"
@@ -161,8 +153,6 @@ final class TunnelController: ObservableObject {
     @Published var proxyInterfaceDescription = "-"
     @Published var proxyLastDetail = AppCopy(language: AppLanguageStore.shared.selectedLanguage).noEventsRecorded
     @Published var helperStateDescription = AppCopy(language: AppLanguageStore.shared.selectedLanguage).privilegedHelperStopped
-    @Published var helperLogEntries: [ProxyLogEntry] = []
-    @Published var helperLogPathDescription = "-"
     @Published var lastErrorDescription = ""
     @Published var isBusy = false
     @Published private(set) var connectionOperation: ConnectionOperationState = .idle
@@ -179,10 +169,6 @@ final class TunnelController: ObservableObject {
             self.consumeNativeStatus(status, source: "embedded")
         }
     }
-    private var helperLogTimer: Timer?
-    private var helperLogOffset: UInt64 = 0
-    private var helperLogRemainder = Data()
-    private let maxLogEntries = 240
     private var activeConnectionContext: ActiveConnectionContext?
     private var activeDNSConfigurationSnapshot: DNSConfigurationSnapshot?
     private var connectionWorkflowTask: Task<Void, Never>?
@@ -213,10 +199,7 @@ final class TunnelController: ObservableObject {
         if UserDefaults.standard.object(forKey: Self.vlessConfigPreferenceKey) != nil {
             vlessConfigInput = UserDefaults.standard.string(forKey: Self.vlessConfigPreferenceKey) ?? ""
         }
-        helperLogPathDescription = Self.helperLogURL.path
-        resetLogStateForFreshStart() // Ensure we start with a clean log view
         refreshHelperState()
-        startHelperLogPolling()
         setupAppActivityObservers()
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -235,7 +218,6 @@ final class TunnelController: ObservableObject {
             NotificationCenter.default.removeObserver(terminationObserver)
         }
         NotificationCenter.default.removeObserver(self)
-        helperLogTimer?.invalidate()
     }
 
     func startProxy() {
@@ -268,7 +250,6 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isUIActive = false
-                self?.pauseHelperLogPolling()
                 self?.localProxyService.pauseStatusUpdates()
                 self?.localProxyService.setUIActive(false)
             }
@@ -280,7 +261,6 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isUIActive = false
-                self?.pauseHelperLogPolling()
                 self?.localProxyService.pauseStatusUpdates()
                 self?.localProxyService.setUIActive(false)
             }
@@ -292,7 +272,6 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isUIActive = true
-                self?.resumeHelperLogPolling()
                 self?.localProxyService.resumeStatusUpdates()
                 self?.localProxyService.setUIActive(true)
                 self?.triggerImmediateStatusUpdate()
@@ -305,7 +284,6 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isUIActive = false
-                self?.pauseHelperLogPolling()
                 self?.localProxyService.pauseStatusUpdates()
                 self?.localProxyService.setUIActive(false)
             }
@@ -317,7 +295,6 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isUIActive = true
-                self?.resumeHelperLogPolling()
                 self?.localProxyService.resumeStatusUpdates()
                 self?.localProxyService.setUIActive(true)
                 self?.triggerImmediateStatusUpdate()
@@ -615,13 +592,10 @@ final class TunnelController: ObservableObject {
     }
 
     private func startPrivilegedHelperInternal() async throws {
-        resetLogStateForFreshStart()
         try writeHelperConfiguration()
         try await Self.runPrivilegedShell(helperStartCommand())
         isPrivilegedHelperRunning = true
         helperStateDescription = copy.privilegedHelperRunning
-        appendLog(level: .info, source: "app", message: "Helper start request sent")
-        startHelperLogPolling()
     }
 
     private func stopPrivilegedHelperInternal() async throws {
@@ -656,31 +630,21 @@ final class TunnelController: ObservableObject {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             refreshHelperState()
-            consumeHelperLogUpdates()
 
             if !isPrivilegedHelperRunning {
-                let excerpt = latestHelperLogExcerpt()
-                throw ConnectionWorkflowError.localProxy(
-                    excerpt.isEmpty ? copy.helperDidNotStart : excerpt
-                )
+                throw ConnectionWorkflowError.localProxy(copy.helperDidNotStart)
             }
 
-            if helperLogEntries.contains(where: { $0.message.contains("Helper is ready") }) || proxyPhase == "running" || proxyPhase == "starting" {
+            if proxyPhase == "running" || proxyPhase == "starting" {
                 return
             }
 
             try await Task.sleep(nanoseconds: 200_000_000)
         }
 
-        let excerpt = latestHelperLogExcerpt()
-        throw ConnectionWorkflowError.localProxy(
-            excerpt.isEmpty ? "Timed out waiting for helper readiness." : excerpt
-        )
+        throw ConnectionWorkflowError.localProxy("Timed out waiting for helper readiness.")
     }
 
-    private func latestHelperLogExcerpt() -> String {
-        helperLogEntries.suffix(6).map(\.message).joined(separator: " | ")
-    }
 
     private func updateWorkflowStep(_ key: ConnectionWorkflowStepKey, state: ConnectionWorkflowStepState, detail: String) {
         if let index = workflowSteps.firstIndex(where: { $0.key == key }) {
@@ -871,13 +835,6 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    func clearLogs() {
-        helperLogEntries.removeAll()
-        helperLogOffset = 0
-        helperLogRemainder = Data()
-        try? FileManager.default.removeItem(at: Self.helperLogURL)
-        appendLog(level: .info, source: "app", message: "Local logs cleared")
-    }
 
     func saveHelperConfigOnly() {
         do {
@@ -1003,23 +960,23 @@ final class TunnelController: ObservableObject {
     }
 
     func noteDiagnosticDumpCopied(byteCount: Int, path: String) {
-        appendLog(level: .info, source: "app", message: "Diagnostic dump copied to clipboard | bytes=\(byteCount) | path=\(path)")
+        // No-op - log system removed
     }
 
     func noteDiagnosticDumpCopyFailed(path: String) {
-        appendLog(level: .error, source: "app", message: "Failed to copy diagnostic dump to clipboard | saved=\(path)")
+        // No-op - log system removed
     }
 
     func noteVisibleLogsCopied() {
-        appendLog(level: .info, source: "app", message: "Visible logs copied to clipboard")
+        // No-op - log system removed
     }
 
     func noteVisibleLogsCopyFailed() {
-        appendLog(level: .error, source: "app", message: "Failed to copy visible logs to clipboard")
+        // No-op - log system removed
     }
 
     func failDiagnosticDumpPreparation(_ description: String) {
-        appendLog(level: .error, source: "app", message: "Diagnostic dump preparation failed | \(description)")
+        // No-op - log system removed
     }
 
     func prepareDiagnosticDumpArtifact() async throws -> DiagnosticDumpArtifact {
@@ -1033,43 +990,12 @@ final class TunnelController: ObservableObject {
         return DiagnosticDumpArtifact(text: text, fileURL: fileURL)
     }
 
-    private func startHelperLogPolling() {
-        helperLogTimer?.invalidate()
-        helperLogTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.pollHelperLogs()
-            }
-        }
-        helperLogTimer?.tolerance = 0.5
-        pollHelperLogs()
-    }
-
-    @MainActor
-    private func pauseHelperLogPolling() {
-        helperLogTimer?.invalidate()
-        helperLogTimer = nil
-    }
-
-    @MainActor
-    private func resumeHelperLogPolling() {
-        guard isUIActive else { return }
-        startHelperLogPolling()
-    }
-
     @MainActor
     private func triggerImmediateStatusUpdate() {
         localProxyService.emitImmediateStatus()
     }
 
-    private func pollHelperLogs() {
-        refreshHelperState()
-        if isUIActive {
-            consumeHelperLogUpdates()
-        }
-    }
-
     private func refreshHelperState() {
-        helperLogPathDescription = Self.helperLogURL.path
         guard
             let pidText = try? String(contentsOf: Self.helperPIDURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
             let pid = Int32(pidText),
@@ -1091,127 +1017,8 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    private func consumeHelperLogUpdates() {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: Self.helperLogURL.path) else {
-            return
-        }
-
-        do {
-            let attributes = try fileManager.attributesOfItem(atPath: Self.helperLogURL.path)
-            let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
-            if size < helperLogOffset {
-                helperLogOffset = 0
-                helperLogRemainder = Data()
-            }
-
-            let handle = try FileHandle(forReadingFrom: Self.helperLogURL)
-            defer {
-                try? handle.close()
-            }
-
-            try handle.seek(toOffset: helperLogOffset)
-            let freshData = try handle.readToEnd() ?? Data()
-            guard !freshData.isEmpty else {
-                return
-            }
-            helperLogOffset += UInt64(freshData.count)
-
-            var combined = helperLogRemainder
-            combined.append(freshData)
-            let newline = Data([0x0a])
-            let chunks = combined.split(separator: newline[0], omittingEmptySubsequences: false)
-            let endsWithNewline = combined.last == newline[0]
-            helperLogRemainder = Data()
-
-            for (index, rawChunk) in chunks.enumerated() {
-                if index == chunks.count - 1, !endsWithNewline {
-                    helperLogRemainder = Data(rawChunk)
-                    continue
-                }
-                guard let line = String(data: rawChunk, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines),
-                    !line.isEmpty
-                else {
-                    continue
-                }
-                consumeHelperLogLine(line)
-            }
-        } catch {
-            fail("Failed to read helper log: \(error.localizedDescription)")
-        }
-    }
-
-    private func consumeHelperLogLine(_ line: String) {
-        let level = Self.extractLevel(from: line)
-        let normalizedMessage = line.replacingOccurrences(of: "[\(level.rawValue)] ", with: "")
-        appendLog(level: level, source: "helper", message: normalizedMessage)
-
-        guard line.contains("[proxy]") else {
-            return
-        }
-
-        if let phase = Self.extractValue(for: "phase", in: line) {
-            proxyPhase = phase
-        }
-        if let connectionsText = Self.extractValue(for: "connections", in: line),
-           let connections = Int(connectionsText) {
-            proxyConnectionCount = connections
-        }
-        if let upText = Self.extractValue(for: "bytesUp", in: line), let up = Int(upText),
-           let downText = Self.extractValue(for: "bytesDown", in: line), let down = Int(downText) {
-            updateSpeeds(up: up, down: down)
-        }
-        if let interface = Self.extractValue(for: "iface", in: line) {
-            proxyInterfaceDescription = interface
-        }
-        if let detail = Self.extractDetail(in: line) {
-            proxyLastDetail = detail
-            proxyStatusDescription = detail
-            if level == .error {
-                if shouldSurfaceProxyError(
-                    detail: detail,
-                    activeConnections: proxyConnectionCount,
-                    bytesUploaded: proxyBytesUploaded,
-                    bytesDownloaded: proxyBytesDownloaded,
-                    phase: proxyPhase
-                ) {
-                    lastErrorDescription = detail
-                }
-            }
-        } else {
-            proxyStatusDescription = line
-        }
-
-        if level != .error {
-            clearTransientProxyErrorIfHealthy(
-                activeConnections: proxyConnectionCount,
-                bytesUploaded: proxyBytesUploaded,
-                bytesDownloaded: proxyBytesDownloaded,
-                phase: proxyPhase
-            )
-        }
-
-        if proxyPhase == "stopped" {
-            isPrivilegedHelperRunning = false
-            helperStateDescription = copy.privilegedHelperStopped
-        } else if isPrivilegedHelperRunning {
-            helperStateDescription = copy.privilegedHelperRunning
-        }
-    }
-
     private func appendLog(level: ProxyLogLevel, source: String, message: String) {
-        helperLogEntries.append(
-            ProxyLogEntry(
-                timestamp: Date(),
-                level: level,
-                source: source,
-                message: message
-            )
-        )
-        if helperLogEntries.count > maxLogEntries {
-            helperLogEntries.removeFirst(helperLogEntries.count - maxLogEntries)
-        }
+        // No-op - log system removed
     }
 
     func diagnosticDump() async -> String {
@@ -1279,17 +1086,7 @@ final class TunnelController: ObservableObject {
             lines.append("  - \(step.key.rawValue) [\(step.state.rawValue)]: \(step.detail)")
         }
 
-        lines.append("Recent app logs (last 500):")
-        for entry in helperLogEntries.suffix(500) {
-            lines.append("  [\(entry.level.rawValue.uppercased())] \(logFormatter.string(from: entry.timestamp)) [\(entry.source)] \(entry.message)")
-        }
-
         let xraySnapshot = xrayManager.recentOutputSnapshot().trimmingCharacters(in: .whitespacesAndNewlines)
-        async let helperLogTailTask: String? = try? await Self.runProcess(
-            launchPath: "/usr/bin/tail",
-            arguments: ["-n", "50", Self.helperLogURL.path],
-            timeout: 2
-        )
         async let psSnapshotTask: String? = try? await Self.runProcess(
             launchPath: "/bin/ps",
             arguments: ["aux", "-c"],
@@ -1308,16 +1105,6 @@ final class TunnelController: ObservableObject {
 
         lines.append("Xray snapshot (last 8KB):")
         lines.append(xraySnapshot.isEmpty ? "  (empty)" : "  \(xraySnapshot.replacingOccurrences(of: "\n", with: "\n  "))")
-
-        let helperLogPath = Self.helperLogURL.path
-        lines.append("Helper log path: \(helperLogPath)")
-        
-        lines.append("Raw Helper log tail (last 50 lines):")
-        if let logTail = await helperLogTailTask {
-             lines.append(logTail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "  (empty)" : "  \(logTail.replacingOccurrences(of: "\n", with: "\n  "))")
-        } else {
-             lines.append("  (failed to read log file)")
-        }
 
         lines.append("Process status:")
         if let psHelper = await psSnapshotTask {
@@ -1380,12 +1167,6 @@ final class TunnelController: ObservableObject {
         try data.write(to: Self.helperConfigURL, options: .atomic)
     }
 
-    private func resetLogStateForFreshStart() {
-        helperLogEntries.removeAll()
-        helperLogOffset = 0
-        helperLogRemainder = Data()
-        try? FileManager.default.removeItem(at: Self.helperLogURL)
-    }
 
     private func helperStartCommand() -> String {
         [
@@ -1974,37 +1755,6 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    private static func extractLevel(from line: String) -> ProxyLogLevel {
-        guard line.hasPrefix("[") else {
-            return .info
-        }
-        guard let closing = line.firstIndex(of: "]") else {
-            return .info
-        }
-        let raw = String(line[line.index(after: line.startIndex) ..< closing])
-        return ProxyLogLevel.parse(raw)
-    }
-
-    private static func extractValue(for key: String, in line: String) -> String? {
-        // More robust parsing: look for key=value or key: value
-        let patterns = ["\(key)=", "\(key): "]
-        for pattern in patterns {
-            if let range = line.range(of: pattern) {
-                let tail = line[range.upperBound...]
-                // Stop at space, comma, or end of string
-                let splitIndex = tail.firstIndex(where: { $0 == " " || $0 == "," }) ?? tail.endIndex
-                return String(tail[..<splitIndex])
-            }
-        }
-        return nil
-    }
-
-    private static func extractDetail(in line: String) -> String? {
-        guard let range = line.range(of: "detail=") else {
-            return nil
-        }
-        return String(line[range.upperBound...])
-    }
 
     private static func shellQuote(_ string: String) -> String {
         "'" + string.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"

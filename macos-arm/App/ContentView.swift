@@ -1,28 +1,6 @@
 import AppKit
 import SwiftUI
 
-private enum LogFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case info = "Info"
-    case error = "Error"
-    case debug = "Debug"
-
-    var id: String { rawValue }
-
-    func matches(_ entry: ProxyLogEntry) -> Bool {
-        switch self {
-        case .all:
-            return true
-        case .info:
-            return entry.level == .info
-        case .error:
-            return entry.level == .error
-        case .debug:
-            return entry.level == .debug
-        }
-    }
-}
-
 extension Color {
     static let appBackground = Color(NSColor.windowBackgroundColor)
     static let cardBackground = Color(NSColor.controlBackgroundColor)
@@ -39,22 +17,15 @@ struct ContentView: View {
     @EnvironmentObject private var tunnelController: TunnelController
     @EnvironmentObject private var languageStore: AppLanguageStore
     @Namespace private var selectionNamespace
-    @State private var selectedLogFilter: LogFilter = .all
-    @State private var isLogsPresented = false
     @State private var isDetailsExpanded = false
     @State private var isWorkflowExpanded = false
     @State private var isLanguageMenuExpanded = false
     @State private var isDetailsHovered = false
     @State private var isWorkflowHovered = false
     @State private var isVlessMasked = false
-    @State private var isPreparingDiagnosticDump = false
-    @State private var diagnosticDumpStatusMessage = ""
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var visibleLogEntries: [ProxyLogEntry] {
-        tunnelController.helperLogEntries.filter { selectedLogFilter.matches($0) }
-    }
 
     private var copy: AppCopy {
         AppCopy(language: languageStore.selectedLanguage)
@@ -154,9 +125,6 @@ struct ContentView: View {
                 .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-        }
-        .sheet(isPresented: $isLogsPresented) {
-            logsSheet
         }
         .onChange(of: tunnelController.configuration.logLevel) { _ in
             Task {
@@ -271,36 +239,15 @@ struct ContentView: View {
                         .disabled(inputsLocked)
                     }
 
-                    HStack(spacing: 12) {
-                        actionButton(
-                            title: connectionActionPresentation().title,
-                            systemImage: connectionActionPresentation().systemImage,
-                            emphasis: .primary,
-                            isBusy: connectionActionPresentation().isBusy,
-                            isEnabled: connectionActionPresentation().isEnabled,
-                            action: connectionActionPresentation().action
-                        )
-                        .frame(maxHeight: .infinity)
-
-                        Button {
-                            isLogsPresented = true
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 16, weight: .bold))
-                                Text(copy.logsTitle)
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(CleanButtonStyle(
-                            emphasis: .secondary,
-                            isBusy: false,
-                            busyTint: Color.accentColor,
-                            colorScheme: colorScheme
-                        ))
-                        .frame(maxHeight: .infinity)
-                    }
+                    actionButton(
+                        title: connectionActionPresentation().title,
+                        systemImage: connectionActionPresentation().systemImage,
+                        emphasis: .primary,
+                        isBusy: connectionActionPresentation().isBusy,
+                        isEnabled: connectionActionPresentation().isEnabled,
+                        action: connectionActionPresentation().action
+                    )
+                    .frame(maxWidth: .infinity)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 8)
@@ -433,105 +380,6 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
-    private var logsSheet: some View {
-        ZStack {
-            Color.appBackground.ignoresSafeArea()
-
-            VStack(spacing: 16) {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(copy.logsHeader)
-                            .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.textPrimary)
-
-                        Text(copy.logsDescription)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer()
-
-                    compactIconButton(
-                        systemImage: "xmark",
-                        accessibilityLabel: copy.closeLogsLabel,
-                        action: { isLogsPresented = false },
-                        colorScheme: colorScheme
-                    )
-                }
-
-                HStack(spacing: 12) {
-                    Picker(copy.filterPickerLabel, selection: $selectedLogFilter) {
-                        ForEach(LogFilter.allCases) { filter in
-                            Text(copy.logFilterTitle(filter.rawValue)).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 320)
-                    .fixedSize()
-
-                    Spacer()
-
-                    HStack(spacing: 10) {
-                        compactIconButton(
-                            systemImage: "doc.on.doc",
-                            accessibilityLabel: copy.copyVisibleLogsLabel,
-                            action: copyVisibleLogs,
-                            colorScheme: colorScheme
-                        )
-
-                        compactIconButton(
-                            systemImage: "doc.richtext",
-                            accessibilityLabel: copy.copyDiagnosticDumpLabel,
-                            isBusy: isPreparingDiagnosticDump,
-                            isEnabled: !isPreparingDiagnosticDump,
-                            action: copyDiagnosticDump,
-                            colorScheme: colorScheme
-                        )
-
-                        compactIconButton(
-                            systemImage: "trash",
-                            accessibilityLabel: copy.clearLogsLabel,
-                            action: tunnelController.clearLogs,
-                            colorScheme: colorScheme
-                        )
-                    }
-                    .fixedSize()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if !diagnosticDumpStatusMessage.isEmpty {
-                    Text(diagnosticDumpStatusMessage)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                CleanCard(content: {
-                    ScrollView {
-                        LazyVStack(spacing: 10) {
-                            if visibleLogEntries.isEmpty {
-                                Text(copy.noLogsAvailable)
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundStyle(Color.textSecondary)
-                                    .frame(maxWidth: .infinity, minHeight: 280)
-                            } else {
-                                ForEach(visibleLogEntries.reversed()) { entry in
-                                    logRow(entry)
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }, colorScheme: colorScheme)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(28)
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(.clear)
-    }
 
     private func configField<Content: View, Trailing: View>(
         title: String,
@@ -656,35 +504,6 @@ struct ContentView: View {
         }
     }
 
-    private func logRow(_ entry: ProxyLogEntry) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(entry.level.rawValue.uppercased())
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(logTint(for: entry.level))
-                .frame(width: 52, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(entry.message)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.textSecondary)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.inputBorder, lineWidth: 1)
-        )
-    }
 
     private func compactIconButton(
         systemImage: String,
@@ -722,50 +541,6 @@ struct ContentView: View {
         .help(accessibilityLabel)
     }
 
-    private func copyVisibleLogs() {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .medium
-        formatter.dateStyle = .none
-
-        let text = visibleLogEntries.map { entry in
-            "[\(entry.level.rawValue.uppercased())] \(formatter.string(from: entry.timestamp)) \(entry.message)"
-        }.joined(separator: "\n")
-
-        guard copyTextToPasteboard(text) else {
-            tunnelController.noteVisibleLogsCopyFailed()
-            return
-        }
-        tunnelController.noteVisibleLogsCopied()
-    }
-
-    private func copyDiagnosticDump() {
-        Task { @MainActor in
-            guard !isPreparingDiagnosticDump else {
-                return
-            }
-
-            isPreparingDiagnosticDump = true
-            diagnosticDumpStatusMessage = copy.preparingDiagnosticDumpTitle
-            defer {
-                isPreparingDiagnosticDump = false
-            }
-
-            do {
-                let artifact = try await tunnelController.prepareDiagnosticDumpArtifact()
-                if copyTextToPasteboard(artifact.text) {
-                    diagnosticDumpStatusMessage = copy.diagnosticDumpReadyTitle(path: artifact.fileURL.path)
-                    tunnelController.noteDiagnosticDumpCopied(byteCount: artifact.text.utf8.count, path: artifact.fileURL.path)
-                    return
-                }
-
-                diagnosticDumpStatusMessage = copy.diagnosticDumpSavedTitle(path: artifact.fileURL.path)
-                tunnelController.noteDiagnosticDumpCopyFailed(path: artifact.fileURL.path)
-            } catch {
-                diagnosticDumpStatusMessage = error.localizedDescription
-                tunnelController.failDiagnosticDumpPreparation(error.localizedDescription)
-            }
-        }
-    }
 
     @discardableResult
     private func copyTextToPasteboard(_ text: String) -> Bool {
