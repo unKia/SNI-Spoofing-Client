@@ -302,14 +302,6 @@ struct ContentView: View {
                 }
                 .padding(.top, 8)
 
-                Toggle(isOn: $tunnelController.autoSetProxy) {
-                    Text(copy.autoSetProxyLabel)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.textPrimary)
-                }
-                .toggleStyle(.switch)
-                .padding(.vertical, 4)
-
                 HStack(alignment: .top, spacing: 14) {
                     compactSectionButton(
                         title: copy.detailsTitle,
