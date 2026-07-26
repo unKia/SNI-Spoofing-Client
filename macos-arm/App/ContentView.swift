@@ -280,6 +280,7 @@ struct ContentView: View {
                             isEnabled: connectionActionPresentation().isEnabled,
                             action: connectionActionPresentation().action
                         )
+                        .frame(maxHeight: .infinity)
 
                         Button {
                             isLogsPresented = true
@@ -298,7 +299,9 @@ struct ContentView: View {
                             busyTint: Color.accentColor,
                             colorScheme: colorScheme
                         ))
+                        .frame(maxHeight: .infinity)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 8)
 
