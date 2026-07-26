@@ -141,6 +141,33 @@ final class LocalProxyService {
         }
     }
 
+    func pauseStatusUpdates() {
+        syncQueue.sync {
+            statusTimer?.cancel()
+            statusTimer = nil
+        }
+    }
+
+    func resumeStatusUpdates() {
+        syncQueue.sync {
+            guard running, statusTimer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: syncQueue)
+            timer.schedule(deadline: .now() + 1, repeating: 1)
+            timer.setEventHandler { [weak self] in
+                self?.emitTrafficStatusIfNeededLocked(phase: "running")
+            }
+            timer.resume()
+            statusTimer = timer
+        }
+    }
+
+    func emitImmediateStatus() {
+        syncQueue.sync {
+            guard running else { return }
+            emitStatusLocked(phase: "running")
+        }
+    }
+
     private func stopLocked(detail: String) {
         running = false
         statusTimer?.cancel()

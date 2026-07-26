@@ -173,8 +173,9 @@ final class TunnelController: ObservableObject {
     private let xrayManager = XrayManager.shared
     private var terminationObserver: NSObjectProtocol?
     private lazy var localProxyService = LocalProxyService { [weak self] status in
+        guard let self, self.isUIActive else { return }
         Task { @MainActor in
-            self?.consumeNativeStatus(status, source: "embedded")
+            self.consumeNativeStatus(status, source: "embedded")
         }
     }
     private var helperLogTimer: Timer?
@@ -266,6 +267,7 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             self?.isUIActive = false
             self?.pauseHelperLogPolling()
+            self?.localProxyService.pauseStatusUpdates()
         }
         NotificationCenter.default.addObserver(
             forName: NSWindow.didMiniaturizeNotification,
@@ -274,6 +276,7 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             self?.isUIActive = false
             self?.pauseHelperLogPolling()
+            self?.localProxyService.pauseStatusUpdates()
         }
         NotificationCenter.default.addObserver(
             forName: NSWindow.didDeminiaturizeNotification,
@@ -282,6 +285,8 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             self?.isUIActive = true
             self?.resumeHelperLogPolling()
+            self?.localProxyService.resumeStatusUpdates()
+            self?.triggerImmediateStatusUpdate()
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.willHideNotification,
@@ -290,6 +295,7 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             self?.isUIActive = false
             self?.pauseHelperLogPolling()
+            self?.localProxyService.pauseStatusUpdates()
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didUnhideNotification,
@@ -298,6 +304,8 @@ final class TunnelController: ObservableObject {
         ) { [weak self] _ in
             self?.isUIActive = true
             self?.resumeHelperLogPolling()
+            self?.localProxyService.resumeStatusUpdates()
+            self?.triggerImmediateStatusUpdate()
         }
     }
 
@@ -1028,6 +1036,10 @@ final class TunnelController: ObservableObject {
     private func resumeHelperLogPolling() {
         guard isUIActive else { return }
         startHelperLogPolling()
+    }
+
+    private func triggerImmediateStatusUpdate() {
+        localProxyService.emitImmediateStatus()
     }
 
     private func pollHelperLogs() {
