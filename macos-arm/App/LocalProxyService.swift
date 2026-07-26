@@ -599,7 +599,7 @@ private final class PcapBypassMonitor {
         while running {
             do {
                 guard let frameData = try session?.nextPacket() else {
-                    usleep(10000)
+                    usleep(50000)
                     continue
                 }
                 try handle(frameData)

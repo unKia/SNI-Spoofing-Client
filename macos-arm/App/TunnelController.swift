@@ -168,6 +168,7 @@ final class TunnelController: ObservableObject {
     @Published private(set) var connectionOperation: ConnectionOperationState = .idle
     @Published var isPrivilegedHelperRunning = false
     private var isAppActive = true
+    private var isUIActive = true
 
     private let xrayManager = XrayManager.shared
     private var terminationObserver: NSObjectProtocol?
@@ -257,6 +258,46 @@ final class TunnelController: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             self?.isAppActive = false
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willMiniaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isUIActive = false
+            self?.pauseHelperLogPolling()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isUIActive = false
+            self?.pauseHelperLogPolling()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didDeminiaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isUIActive = true
+            self?.resumeHelperLogPolling()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willHideNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isUIActive = false
+            self?.pauseHelperLogPolling()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didUnhideNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isUIActive = true
+            self?.resumeHelperLogPolling()
         }
     }
 
@@ -904,7 +945,7 @@ final class TunnelController: ObservableObject {
 
 
     private func consumeNativeStatus(_ status: NativeProxyStatus, source: String) {
-        guard isAppActive else {
+        guard isUIActive else {
             return
         }
         proxyPhase = status.phase
@@ -979,9 +1020,19 @@ final class TunnelController: ObservableObject {
         pollHelperLogs()
     }
 
+    private func pauseHelperLogPolling() {
+        helperLogTimer?.invalidate()
+        helperLogTimer = nil
+    }
+
+    private func resumeHelperLogPolling() {
+        guard isUIActive else { return }
+        startHelperLogPolling()
+    }
+
     private func pollHelperLogs() {
         refreshHelperState()
-        if isAppActive {
+        if isUIActive {
             consumeHelperLogUpdates()
         }
     }
