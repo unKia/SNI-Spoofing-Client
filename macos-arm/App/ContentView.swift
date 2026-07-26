@@ -126,14 +126,14 @@ struct ContentView: View {
                     mainCard
                     
                     HStack(spacing: 8) {
-                        infoPill(text: appVersionLabel, icon: "info.circle.fill")
+                        infoPill(text: appVersionLabel, icon: "info.circle.fill", colorScheme: colorScheme)
                         
                         Button {
                             if let url = URL(string: "https://github.com/PK3NZO/SNI-Spoofing-Client") {
                                 NSWorkspace.shared.open(url)
                             }
                         } label: {
-                            infoPill(text: "by PK3NZO", icon: "person.fill")
+                            infoPill(text: "by PK3NZO", icon: "person.fill", colorScheme: colorScheme)
                         }
                         .buttonStyle(.plain)
                         
@@ -144,7 +144,7 @@ struct ContentView: View {
                                 NSWorkspace.shared.open(url)
                             }
                         } label: {
-                            infoPill(text: "Shoutout to patterniha for his great project", icon: "heart.fill")
+                            infoPill(text: "Shoutout to patterniha for his great project", icon: "heart.fill", colorScheme: colorScheme)
                         }
                         .buttonStyle(.plain)
                     }
@@ -193,7 +193,7 @@ struct ContentView: View {
     }
 
     private var mainCard: some View {
-        CleanCard {
+        CleanCard(colorScheme: colorScheme) {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -219,7 +219,8 @@ struct ContentView: View {
                                 .textFieldStyle(
                                     CleanTextFieldStyle(
                                         borderColor: domainFieldNeedsAttention ? .validationBorder : .inputBorder,
-                                        fillColor: .inputBackground
+                                        fillColor: .inputBackground,
+                                        colorScheme: colorScheme
                                     )
                                 )
                                 .opacity(inputsLocked ? 0.6 : 1.0)
@@ -231,7 +232,8 @@ struct ContentView: View {
                                 .textFieldStyle(
                                     CleanTextFieldStyle(
                                         borderColor: ipFieldNeedsAttention ? .validationBorder : .inputBorder,
-                                        fillColor: .inputBackground
+                                        fillColor: .inputBackground,
+                                        colorScheme: colorScheme
                                     )
                                 )
                                 .opacity(inputsLocked ? 0.6 : 1.0)
@@ -365,7 +367,8 @@ struct ContentView: View {
                         isExpanded: isDetailsExpanded,
                         isHovered: isDetailsHovered,
                         action: { isDetailsExpanded.toggle() },
-                        onHover: { hovering in isDetailsHovered = hovering }
+                        onHover: { hovering in isDetailsHovered = hovering },
+                        colorScheme: colorScheme
                     )
 
                     compactSectionButton(
@@ -374,7 +377,8 @@ struct ContentView: View {
                         isExpanded: isWorkflowExpanded,
                         isHovered: isWorkflowHovered,
                         action: { isWorkflowExpanded.toggle() },
-                        onHover: { hovering in isWorkflowHovered = hovering }
+                        onHover: { hovering in isWorkflowHovered = hovering },
+                        colorScheme: colorScheme
                     )
                 }
 
@@ -460,9 +464,9 @@ struct ContentView: View {
         isExpanded: Bool,
         isHovered: Bool,
         action: @escaping () -> Void,
-        onHover: @escaping (Bool) -> Void
+        onHover: @escaping (Bool) -> Void,
+        colorScheme: ColorScheme
     ) -> some View {
-        @Environment(\.colorScheme) var colorScheme
         Button(action: action) {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -524,7 +528,8 @@ struct ContentView: View {
                     compactIconButton(
                         systemImage: "xmark",
                         accessibilityLabel: copy.closeLogsLabel,
-                        action: { isLogsPresented = false }
+                        action: { isLogsPresented = false },
+                        colorScheme: colorScheme
                     )
                 }
 
@@ -544,7 +549,8 @@ struct ContentView: View {
                         compactIconButton(
                             systemImage: "doc.on.doc",
                             accessibilityLabel: copy.copyVisibleLogsLabel,
-                            action: copyVisibleLogs
+                            action: copyVisibleLogs,
+                            colorScheme: colorScheme
                         )
 
                         compactIconButton(
@@ -552,13 +558,15 @@ struct ContentView: View {
                             accessibilityLabel: copy.copyDiagnosticDumpLabel,
                             isBusy: isPreparingDiagnosticDump,
                             isEnabled: !isPreparingDiagnosticDump,
-                            action: copyDiagnosticDump
+                            action: copyDiagnosticDump,
+                            colorScheme: colorScheme
                         )
 
                         compactIconButton(
                             systemImage: "trash",
                             accessibilityLabel: copy.clearLogsLabel,
-                            action: tunnelController.clearLogs
+                            action: tunnelController.clearLogs,
+                            colorScheme: colorScheme
                         )
                     }
                     .fixedSize()
@@ -572,7 +580,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                CleanCard {
+                CleanCard(colorScheme: colorScheme) {
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             if visibleLogEntries.isEmpty {
@@ -758,9 +766,9 @@ struct ContentView: View {
         accessibilityLabel: String,
         isBusy: Bool = false,
         isEnabled: Bool = true,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
+        colorScheme: ColorScheme
     ) -> some View {
-        @Environment(\.colorScheme) var colorScheme
         Button(action: action) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -889,8 +897,7 @@ struct ContentView: View {
         return Text(masked)
     }
 
-    private func infoPill(text: String, icon: String) -> some View {
-        @Environment(\.colorScheme) var colorScheme
+    private func infoPill(text: String, icon: String, colorScheme: ColorScheme) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 9, weight: .bold))
@@ -935,7 +942,8 @@ struct ContentView: View {
         .buttonStyle(CleanButtonStyle(
             emphasis: emphasis,
             isBusy: isBusy,
-            busyTint: tunnelController.isConnected ? Color.secondary : Color.accentColor
+            busyTint: tunnelController.isConnected ? Color.secondary : Color.accentColor,
+            colorScheme: colorScheme
         ))
         .disabled(!isEnabled)
     }
@@ -1266,9 +1274,9 @@ struct ContentView: View {
         flag: String,
         chevronName: String?,
         isSelected: Bool,
-        compact: Bool
+        compact: Bool,
+        colorScheme: ColorScheme
     ) -> some View {
-        @Environment(\.colorScheme) var colorScheme
         HStack(alignment: .center, spacing: compact ? 10 : 12) {
             if let chevronName {
                 Image(systemName: chevronName)
@@ -1314,7 +1322,7 @@ struct ContentView: View {
 
 private struct CleanCard<Content: View>: View {
     @ViewBuilder let content: Content
-    @Environment(\.colorScheme) private var colorScheme
+    let colorScheme: ColorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1336,11 +1344,12 @@ private struct CleanCard<Content: View>: View {
 private struct CleanTextFieldStyle: TextFieldStyle {
     let borderColor: Color
     let fillColor: Color
-    @Environment(\.colorScheme) private var colorScheme
+    let colorScheme: ColorScheme
 
-    init(borderColor: Color = .inputBorder, fillColor: Color = .inputBackground) {
+    init(borderColor: Color = .inputBorder, fillColor: Color = .inputBackground, colorScheme: ColorScheme = .light) {
         self.borderColor = borderColor
         self.fillColor = fillColor
+        self.colorScheme = colorScheme
     }
 
     func _body(configuration: TextField<Self._Label>) -> some View {
@@ -1371,8 +1380,8 @@ private struct CleanButtonStyle: ButtonStyle {
     let emphasis: ButtonEmphasis
     let isBusy: Bool
     let busyTint: Color
+    let colorScheme: ColorScheme
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1495,7 +1504,8 @@ struct ActiveProxyStatsView: View {
                 value: formatBytes(tunnelController.proxyDownloadSpeed) + "/s",
                 icon: "arrow.down",
                 color: Color.green,
-                speed: tunnelController.proxyDownloadSpeed
+                speed: tunnelController.proxyDownloadSpeed,
+                colorScheme: colorScheme
             )
 
             LiveStatCard(
@@ -1503,7 +1513,8 @@ struct ActiveProxyStatsView: View {
                 value: formatBytes(tunnelController.proxyUploadSpeed) + "/s",
                 icon: "arrow.up",
                 color: Color.blue,
-                speed: tunnelController.proxyUploadSpeed
+                speed: tunnelController.proxyUploadSpeed,
+                colorScheme: colorScheme
             )
             
             LiveStatCard(
@@ -1511,7 +1522,8 @@ struct ActiveProxyStatsView: View {
                 value: formatTotalBytes(tunnelController.proxyTotalBytes),
                 icon: "chart.bar.fill",
                 color: Color.orange,
-                speed: 0 // No flowing animation for total
+                speed: 0, // No flowing animation for total
+                colorScheme: colorScheme
             )
         }
         .frame(maxWidth: .infinity)
@@ -1543,7 +1555,7 @@ struct LiveStatCard: View {
     let icon: String
     let color: Color
     let speed: Int
-    @Environment(\.colorScheme) private var colorScheme
+    let colorScheme: ColorScheme
 
     var body: some View {
         VStack(spacing: 10) {
