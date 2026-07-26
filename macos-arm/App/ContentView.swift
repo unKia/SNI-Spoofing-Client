@@ -586,24 +586,6 @@ struct ContentView: View {
                         .padding(.vertical, 4)
                     }
                 }, colorScheme: colorScheme)
-                    ScrollView {
-                        LazyVStack(spacing: 10) {
-                            if visibleLogEntries.isEmpty {
-                                Text(copy.noLogsAvailable)
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundStyle(Color.textSecondary)
-                                    .frame(maxWidth: .infinity, minHeight: 280)
-                            } else {
-                                ForEach(visibleLogEntries.reversed()) { entry in
-                                    logRow(entry)
-                                }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .textSelection(.enabled)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(28)
