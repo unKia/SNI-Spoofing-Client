@@ -24,15 +24,15 @@ private enum LogFilter: String, CaseIterable, Identifiable {
 }
 
 extension Color {
-    static let appBackground = Color(red: 244/255, green: 247/255, blue: 250/255)
-    static let cardBackground = Color.white
-    static let textPrimary = Color(red: 44/255, green: 62/255, blue: 80/255) // #2C3E50
-    static let textSecondary = Color(red: 100/255, green: 116/255, blue: 139/255)
-    static let primaryButton = Color(red: 44/255, green: 62/255, blue: 80/255) // #2C3E50
-    static let inputBackground = Color.white
-    static let inputBorder = Color(red: 226/255, green: 232/255, blue: 240/255)
-    static let accentCyan = Color(red: 14/255, green: 165/255, blue: 233/255)
-    static let validationBorder = Color(red: 252/255, green: 165/255, blue: 165/255)
+    static let appBackground = Color(NSColor.windowBackgroundColor)
+    static let cardBackground = Color(NSColor.controlBackgroundColor)
+    static let textPrimary = Color.primary
+    static let textSecondary = Color.secondary
+    static let primaryButton = Color.accentColor
+    static let inputBackground = Color(NSColor.textBackgroundColor)
+    static let inputBorder = Color(NSColor.separatorColor)
+    static let accentCyan = Color.accentColor
+    static let validationBorder = Color.red
 }
 
 struct ContentView: View {
@@ -106,8 +106,8 @@ struct ContentView: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 248/255, green: 250/255, blue: 252/255),
-                    Color(red: 241/255, green: 245/255, blue: 249/255)
+                    Color(NSColor.windowBackgroundColor),
+                    Color(NSColor.controlBackgroundColor)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -115,7 +115,7 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             Color.appBackground
-                .opacity(0.12)
+                .opacity(0.05)
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: true) {
@@ -285,7 +285,7 @@ struct ContentView: View {
                                         .font(.system(size: 12, weight: .bold))
                                         .foregroundStyle(Color.textSecondary)
                                         .frame(width: 24, height: 24)
-                                        .background(Color.white.opacity(0.8))
+                                        .background(Color(NSColor.alternatingContentBackgroundColors[0]).opacity(0.8))
                                         .clipShape(Circle())
                                 }
                                 .buttonStyle(.plain)
@@ -300,7 +300,7 @@ struct ContentView: View {
                                 .allowsHitTesting(false)
                             
                             if inputsLocked && !isVlessMasked {
-                                Color.white.opacity(0.01)
+                                Color(NSColor.controlBackgroundColor).opacity(0.01)
                                     .onTapGesture {}
                                     .onHover { _ in }
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -321,7 +321,7 @@ struct ContentView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: tunnelController.enableSystemProxyInProxyMode ? "checkmark.square.fill" : "square")
                                     .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(tunnelController.enableSystemProxyInProxyMode ? Color(red: 30/255, green: 111/255, blue: 255/255) : Color.textSecondary)
+                                    .foregroundStyle(tunnelController.enableSystemProxyInProxyMode ? Color.accentColor : Color.textSecondary)
                                     .padding(.top, 1)
 
                                 VStack(alignment: .leading, spacing: 4) {
@@ -340,7 +340,7 @@ struct ContentView: View {
                             .padding(.vertical, 12)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                                    .fill(Color(NSColor.controlBackgroundColor))
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -427,7 +427,7 @@ struct ContentView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -444,7 +444,7 @@ struct ContentView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -487,7 +487,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isHovered ? Color.white : Color(red: 248/255, green: 250/255, blue: 252/255))
+                    .fill(isHovered ? Color(NSColor.alternatingContentBackgroundColors[0]) : Color(NSColor.controlBackgroundColor))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -632,7 +632,7 @@ struct ContentView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
@@ -666,7 +666,7 @@ struct ContentView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
@@ -742,7 +742,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -760,7 +760,7 @@ struct ContentView: View {
         Button(action: action) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white)
+                    .fill(Color(NSColor.controlBackgroundColor))
 
                 if isBusy {
                     ProgressView()
@@ -916,7 +916,7 @@ struct ContentView: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 if isBusy {
-                    let busyColor = tunnelController.isConnected ? Color(red: 148/255, green: 163/255, blue: 184/255) : Color(red: 96/255, green: 165/255, blue: 250/255)
+                    let busyColor = tunnelController.isConnected ? Color.secondary : Color.accentColor
                     busySpinnerGlyph(tint: busyColor)
                 } else {
                     Image(systemName: systemImage)
@@ -930,7 +930,7 @@ struct ContentView: View {
         .buttonStyle(CleanButtonStyle(
             emphasis: emphasis,
             isBusy: isBusy,
-            busyTint: tunnelController.isConnected ? Color(red: 148/255, green: 163/255, blue: 184/255) : Color(red: 96/255, green: 165/255, blue: 250/255)
+            busyTint: tunnelController.isConnected ? Color.secondary : Color.accentColor
         ))
         .disabled(!isEnabled)
     }
@@ -965,43 +965,43 @@ struct ContentView: View {
 
         if isBusy {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 14/255, green: 165/255, blue: 233/255), // Sky Blue
+                tint: Color.blue,
                 kind: .busy,
                 isLive: true
             )
         } else if tunnelController.isConnected {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 34/255, green: 197/255, blue: 94/255), // Emerald Green
+                tint: Color.green,
                 kind: .connected,
                 isLive: true
             )
         } else if hasError {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 239/255, green: 68/255, blue: 68/255), // Red
+                tint: Color.red,
                 kind: .error,
                 isLive: false
             )
         } else if isDisconnected {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 100/255, green: 116/255, blue: 139/255), // Slate
+                tint: Color.secondary,
                 kind: .disconnected,
                 isLive: false
             )
         } else if isReady {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 59/255, green: 130/255, blue: 246/255), // Blue
+                tint: Color.blue,
                 kind: .ready,
                 isLive: true
             )
         } else if title.contains("Cancel") || title.lowercased().contains("cancel") {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 251/255, green: 146/255, blue: 60/255), // Amber/Orange
+                tint: Color.orange,
                 kind: .cancelled,
                 isLive: false
             )
         } else {
             presentation = StatusBadgePresentation(
-                tint: Color(red: 59/255, green: 130/255, blue: 246/255), // Blue
+                tint: Color.blue,
                 kind: .idle,
                 isLive: false
             )
@@ -1077,7 +1077,7 @@ struct ContentView: View {
                     case .busy:
                         Circle()
                             .trim(from: 0, to: 0.7)
-                            .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            .stroke(Color(NSColor.textColor), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                             .frame(width: 14, height: 14)
                             .rotationEffect(.degrees(rotation))
                         
@@ -1096,7 +1096,7 @@ struct ContentView: View {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 14, weight: .bold))
                             .scaleEffect(0.85 + pulse * 0.25)
-                            .shadow(color: .white.opacity(0.6), radius: 4 * pulse)
+                            .shadow(color: Color(NSColor.textColor).opacity(0.6), radius: 4 * pulse)
                         
                     case .disconnected:
                         // Disconnected: A steady, slightly dimmed power icon with a slow breath
@@ -1116,8 +1116,8 @@ struct ContentView: View {
                             .scaleEffect(0.95 + pulse * 0.1)
                     }
                 }
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
+                .foregroundStyle(Color(NSColor.textColor))
+                .shadow(color: Color.black.opacity(0.15), radius: 1, x: 0, y: 1)
             }
             .frame(width: 28, height: 28)
         }
@@ -1147,7 +1147,7 @@ struct ContentView: View {
 
                 Circle()
                     .trim(from: 0, to: 0.7)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .stroke(Color(NSColor.textColor), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
                     .frame(width: 13, height: 13)
                     .rotationEffect(.degrees(rotation))
             }
@@ -1204,7 +1204,7 @@ struct ContentView: View {
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white.opacity(0.88))
+                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.88))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1238,7 +1238,7 @@ struct ContentView: View {
                         .padding(.vertical, 12)
                         .background(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(language == languageStore.selectedLanguage ? Color(red: 236/255, green: 244/255, blue: 255/255) : Color.white)
+                                .fill(language == languageStore.selectedLanguage ? Color.accentColor.opacity(0.2) : Color(NSColor.controlBackgroundColor))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1250,7 +1250,7 @@ struct ContentView: View {
             }
             .padding(12)
             .frame(width: 260)
-            .background(Color.white)
+            .background(Color(NSColor.windowBackgroundColor))
         }
     }
 
@@ -1294,7 +1294,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: compact ? 18 : 20, style: .continuous)
-                .fill(isSelected ? Color.white : Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(isSelected ? Color(NSColor.alternatingContentBackgroundColors[0]) : Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: compact ? 18 : 20, style: .continuous)
@@ -1405,7 +1405,7 @@ private struct CleanButtonStyle: ButtonStyle {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.white.opacity(0.12 + pulse * 0.12), lineWidth: 1.0)
+                            .stroke(Color(NSColor.textColor).opacity(0.12 + pulse * 0.12), lineWidth: 1.0)
                     )
                     .shadow(color: busyTint.opacity(0.22 + pulse * 0.1), radius: 8 + pulse * 4, x: 0, y: 4)
             }
@@ -1423,7 +1423,7 @@ private struct CleanButtonStyle: ButtonStyle {
         case .primary:
             return Color.primaryButton
         case .secondary:
-            return Color.white
+            return Color(NSColor.controlBackgroundColor)
         case .ghost:
             return Color.clear
         }
@@ -1431,12 +1431,12 @@ private struct CleanButtonStyle: ButtonStyle {
     
     private func textColor(for emphasis: ButtonEmphasis) -> Color {
         if isBusy {
-            return .white
+            return Color(NSColor.textColor)
         }
 
         switch emphasis {
         case .primary:
-            return .white
+            return Color(NSColor.textColor)
         case .secondary:
             return Color.textPrimary
         case .ghost:
@@ -1446,7 +1446,7 @@ private struct CleanButtonStyle: ButtonStyle {
     
     private func borderColor(for emphasis: ButtonEmphasis) -> Color {
         if isBusy {
-            return Color.white.opacity(0.08)
+            return Color(NSColor.textColor).opacity(0.08)
         }
 
         switch emphasis {
@@ -1484,7 +1484,7 @@ struct ActiveProxyStatsView: View {
                 title: copy.downloadStatLabel,
                 value: formatBytes(tunnelController.proxyDownloadSpeed) + "/s",
                 icon: "arrow.down",
-                color: Color(red: 34/255, green: 197/255, blue: 94/255), // Emerald Green
+                color: Color.green,
                 speed: tunnelController.proxyDownloadSpeed
             )
 
@@ -1554,7 +1554,7 @@ struct LiveStatCard: View {
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(red: 248/255, green: 250/255, blue: 252/255))
+                .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
