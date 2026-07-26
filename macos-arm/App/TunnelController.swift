@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Darwin
+import Security
 
 struct ProxyLogEntry: Identifiable, Equatable {
     let id = UUID()
@@ -1720,6 +1721,58 @@ final class TunnelController: ObservableObject {
         return parts.joined(separator: " | ")
     }
 
+    // MARK: - Keychain Password Storage
+    private static let keychainService = "com.snispoofing.admin"
+    private static let keychainAccount = "admin_password"
+
+    private static func savePasswordToKeychain(_ password: String) -> Bool {
+        let passwordData = password.data(using: .utf8)!
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecValueData as String: passwordData
+        ]
+
+        // First, try to delete any existing item
+        SecItemDelete(query as CFDictionary)
+
+        // Add the new item
+        let status = SecItemAdd(query as CFDictionary, nil)
+
+        return status == errSecSuccess
+    }
+
+    private static func retrievePasswordFromKeychain() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecSuccess, let passwordData = result as? Data {
+            return String(data: passwordData, encoding: .utf8)
+        }
+
+        return nil
+    }
+
+    private static func deletePasswordFromKeychain() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
 
     @MainActor
     private static var cachedAdminPassword: String? = nil
@@ -1727,6 +1780,14 @@ final class TunnelController: ObservableObject {
     @MainActor
     private static func promptForPassword() -> String? {
         if let cached = cachedAdminPassword { return cached }
+
+        // Try to retrieve from Keychain first
+        if let keychainPassword = retrievePasswordFromKeychain() {
+            cachedAdminPassword = keychainPassword
+            return cachedAdminPassword
+        }
+
+        // Prompt user for password
         let alert = NSAlert()
         alert.messageText = AppCopy(language: AppLanguageStore.shared.selectedLanguage).administratorPrivilegesRequired
         alert.informativeText = AppCopy(language: AppLanguageStore.shared.selectedLanguage).helperPrivilegesMessage
@@ -1737,9 +1798,12 @@ final class TunnelController: ObservableObject {
         alert.addButton(withTitle: promptCopy.helperPrivilegesCancel)
         alert.window.initialFirstResponder = secureTextField
         NSApp.activate(ignoringOtherApps: true)
-        
+
         if alert.runModal() == .alertFirstButtonReturn {
-            cachedAdminPassword = secureTextField.stringValue
+            let password = secureTextField.stringValue
+            cachedAdminPassword = password
+            // Save to Keychain for future use
+            _ = savePasswordToKeychain(password)
             return cachedAdminPassword
         }
         return nil
@@ -1757,6 +1821,8 @@ final class TunnelController: ObservableObject {
             let lowered = error.localizedDescription.lowercased()
             if lowered.contains("incorrect password") || lowered.contains("try again") {
                 cachedAdminPassword = nil
+                // Also remove from Keychain since it's invalid
+                _ = deletePasswordFromKeychain()
                 throw TunnelControllerError.commandFailed(AppCopy(language: AppLanguageStore.shared.selectedLanguage).incorrectPassword)
             }
             throw error
