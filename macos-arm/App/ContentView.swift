@@ -50,6 +50,8 @@ struct ContentView: View {
     @State private var isPreparingDiagnosticDump = false
     @State private var diagnosticDumpStatusMessage = ""
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var visibleLogEntries: [ProxyLogEntry] {
         tunnelController.helperLogEntries.filter { selectedLogFilter.matches($0) }
     }
@@ -460,6 +462,7 @@ struct ContentView: View {
         action: @escaping () -> Void,
         onHover: @escaping (Bool) -> Void
     ) -> some View {
+        @Environment(\.colorScheme) var colorScheme
         Button(action: action) {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -493,7 +496,7 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(isHovered ? Color.accentCyan.opacity(0.3) : Color.inputBorder, lineWidth: 1)
             )
-            .shadow(color: Color.primary.opacity(isHovered ? 0.08 : 0), radius: 10, x: 0, y: 5)
+            .shadow(color: colorScheme == .dark ? Color.black.opacity(isHovered ? 0.3 : 0) : Color.primary.opacity(isHovered ? 0.08 : 0), radius: 10, x: 0, y: 5)
             .onHover(perform: onHover)
         }
         .buttonStyle(.plain)
@@ -757,6 +760,7 @@ struct ContentView: View {
         isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
+        @Environment(\.colorScheme) var colorScheme
         Button(action: action) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -777,7 +781,7 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(Color.inputBorder, lineWidth: 1)
             )
-            .shadow(color: Color.primary.opacity(0.03), radius: 4, x: 0, y: 2)
+            .shadow(color: colorScheme == .dark ? Color.black.opacity(0.2) : Color.primary.opacity(0.03), radius: 4, x: 0, y: 2)
             .opacity(isEnabled ? 1 : 0.6)
         }
         .buttonStyle(.plain)
@@ -886,6 +890,7 @@ struct ContentView: View {
     }
 
     private func infoPill(text: String, icon: String) -> some View {
+        @Environment(\.colorScheme) var colorScheme
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 9, weight: .bold))
@@ -894,7 +899,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .foregroundStyle(Color.textSecondary.opacity(0.7))
+        .foregroundStyle(colorScheme == .dark ? Color.primary.opacity(0.6) : Color.textSecondary.opacity(0.7))
         .background(
             Capsule()
                 .fill(Color.cardBackground.opacity(0.5))
@@ -1016,18 +1021,18 @@ struct ContentView: View {
 
             Text(title)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.textPrimary)
+                .foregroundStyle(colorScheme == .dark ? Color.primary : Color.textPrimary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(presentation.tint.opacity(0.1))
+                .fill(colorScheme == .dark ? presentation.tint.opacity(0.25) : presentation.tint.opacity(0.12))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(presentation.tint.opacity(0.18), lineWidth: 1.2)
+                .stroke(presentation.tint.opacity(colorScheme == .dark ? 0.3 : 0.18), lineWidth: 1.2)
         )
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: badgeState)
     }
@@ -1195,6 +1200,7 @@ struct ContentView: View {
     }
 
     private var languageSelector: some View {
+        @Environment(\.colorScheme) var colorScheme
         Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                 isLanguageMenuExpanded.toggle()
@@ -1210,7 +1216,7 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color.inputBorder, lineWidth: 1)
                 )
-                .shadow(color: Color.primary.opacity(0.04), radius: 8, x: 0, y: 3)
+                .shadow(color: colorScheme == .dark ? Color.black.opacity(0.2) : Color.primary.opacity(0.04), radius: 8, x: 0, y: 3)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isLanguageMenuExpanded, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
@@ -1262,6 +1268,7 @@ struct ContentView: View {
         isSelected: Bool,
         compact: Bool
     ) -> some View {
+        @Environment(\.colorScheme) var colorScheme
         HStack(alignment: .center, spacing: compact ? 10 : 12) {
             if let chevronName {
                 Image(systemName: chevronName)
@@ -1300,13 +1307,14 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: compact ? 18 : 20, style: .continuous)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-        .shadow(color: Color.primary.opacity(isSelected ? 0.04 : 0), radius: 10, x: 0, y: 4)
+        .shadow(color: colorScheme == .dark ? Color.black.opacity(isSelected ? 0.2 : 0) : Color.primary.opacity(isSelected ? 0.04 : 0), radius: 10, x: 0, y: 4)
     }
 }
 
 
 private struct CleanCard<Content: View>: View {
     @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1321,13 +1329,14 @@ private struct CleanCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-        .shadow(color: Color.primary.opacity(0.04), radius: 16, x: 0, y: 8)
+        .shadow(color: colorScheme == .dark ? Color.black.opacity(0.3) : Color.primary.opacity(0.04), radius: 16, x: 0, y: 8)
     }
 }
 
 private struct CleanTextFieldStyle: TextFieldStyle {
     let borderColor: Color
     let fillColor: Color
+    @Environment(\.colorScheme) private var colorScheme
 
     init(borderColor: Color = .inputBorder, fillColor: Color = .inputBackground) {
         self.borderColor = borderColor
@@ -1363,6 +1372,7 @@ private struct CleanButtonStyle: ButtonStyle {
     let isBusy: Bool
     let busyTint: Color
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1414,7 +1424,7 @@ private struct CleanButtonStyle: ButtonStyle {
 
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(fillColor(for: emphasis).opacity(opacity))
-                .shadow(color: emphasis == .primary && isEnabled ? Color.primaryButton.opacity(0.2) : Color.clear, radius: 8, x: 0, y: 4)
+                .shadow(color: emphasis == .primary && isEnabled ? (colorScheme == .dark ? Color.black.opacity(0.3) : Color.primaryButton.opacity(0.2)) : Color.clear, radius: 8, x: 0, y: 4)
         }
     }
 
@@ -1533,6 +1543,7 @@ struct LiveStatCard: View {
     let icon: String
     let color: Color
     let speed: Int
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 10) {
@@ -1560,7 +1571,7 @@ struct LiveStatCard: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.inputBorder, lineWidth: 1)
         )
-        .shadow(color: Color.primary.opacity(0.02), radius: 8, x: 0, y: 4)
+        .shadow(color: colorScheme == .dark ? Color.black.opacity(0.2) : Color.primary.opacity(0.02), radius: 8, x: 0, y: 4)
     }
 }
 
