@@ -305,6 +305,10 @@ struct ContentView: View {
                 }
                 .padding(.top, 8)
 
+                if tunnelController.isConnected {
+                    ActiveProxyStatsView()
+                }
+
                 HStack(alignment: .top, spacing: 14) {
                     compactSectionButton(
                         title: copy.detailsTitle,
