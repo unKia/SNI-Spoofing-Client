@@ -635,11 +635,10 @@ final class TunnelController: ObservableObject {
                 throw ConnectionWorkflowError.localProxy(copy.helperDidNotStart)
             }
 
-            if proxyPhase == "running" || proxyPhase == "starting" {
-                return
-            }
-
-            try await Task.sleep(nanoseconds: 200_000_000)
+            // Helper is ready if PID file exists and process is alive
+            // Give it a small grace period to initialize
+            try await Task.sleep(nanoseconds: 500_000_000)
+            return
         }
 
         throw ConnectionWorkflowError.localProxy("Timed out waiting for helper readiness.")
