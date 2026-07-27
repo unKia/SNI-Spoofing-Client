@@ -17,10 +17,8 @@ struct ContentView: View {
     @EnvironmentObject private var tunnelController: TunnelController
     @EnvironmentObject private var languageStore: AppLanguageStore
     @Namespace private var selectionNamespace
-    @State private var isDetailsExpanded = false
     @State private var isWorkflowExpanded = false
     @State private var isLanguageMenuExpanded = false
-    @State private var isDetailsHovered = false
     @State private var isWorkflowHovered = false
     @State private var isVlessMasked = false
 
@@ -252,35 +250,15 @@ struct ContentView: View {
                 }
                 .padding(.top, 8)
 
-                if tunnelController.isConnected {
-                    ActiveProxyStatsView()
-                }
-
-                HStack(alignment: .top, spacing: 14) {
-                    compactSectionButton(
-                        title: copy.detailsTitle,
-                        subtitle: tunnelController.connectionDetail,
-                        isExpanded: isDetailsExpanded,
-                        isHovered: isDetailsHovered,
-                        action: { isDetailsExpanded.toggle() },
-                        onHover: { hovering in isDetailsHovered = hovering },
-                        colorScheme: colorScheme
-                    )
-
-                    compactSectionButton(
-                        title: copy.workflowTitle,
-                        subtitle: copy.workflowSubtitle(count: tunnelController.workflowSteps.count),
-                        isExpanded: isWorkflowExpanded,
-                        isHovered: isWorkflowHovered,
-                        action: { isWorkflowExpanded.toggle() },
-                        onHover: { hovering in isWorkflowHovered = hovering },
-                        colorScheme: colorScheme
-                    )
-                }
-
-                if isDetailsExpanded {
-                    detailsSection
-                }
+                compactSectionButton(
+                    title: copy.workflowTitle,
+                    subtitle: copy.workflowSubtitle(count: tunnelController.workflowSteps.count),
+                    isExpanded: isWorkflowExpanded,
+                    isHovered: isWorkflowHovered,
+                    action: { isWorkflowExpanded.toggle() },
+                    onHover: { hovering in isWorkflowHovered = hovering },
+                    colorScheme: colorScheme
+                )
 
                 if isWorkflowExpanded {
                     workflowSection
@@ -290,30 +268,6 @@ struct ContentView: View {
     }
 
 
-    private var summarySection: some View {
-        VStack(spacing: 12) {
-            infoRow(label: copy.connectionLabel, value: tunnelController.connectionDetail)
-            infoRow(label: copy.allowlistLabel, value: tunnelController.activeConnectionSummary)
-            infoRow(label: copy.systemRouteLabel, value: tunnelController.routeManagerSummary)
-            infoRow(label: copy.originalServerLabel, value: tunnelController.originalServerSummary)
-            infoRow(label: copy.probeLabel, value: tunnelController.lastProbeDescription)
-        }
-    }
-
-    private var detailsSection: some View {
-        VStack(spacing: 12) {
-            summarySection
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.inputBorder, lineWidth: 1)
-        )
-    }
 
     private var workflowSection: some View {
         VStack(alignment: .leading, spacing: 12) {

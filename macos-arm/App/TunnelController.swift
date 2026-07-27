@@ -172,16 +172,6 @@ final class TunnelController: ObservableObject {
     private var activeConnectionContext: ActiveConnectionContext?
     private var activeDNSConfigurationSnapshot: DNSConfigurationSnapshot?
     private var connectionWorkflowTask: Task<Void, Never>?
-    
-    private var lastSpeedUpdate = Date()
-    private var lastTrafficUpdate = Date()
-    private var lastBytesUploaded = 0
-    private var lastBytesDownloaded = 0
-    private var hasSpeedBaseline = false
-    private var pendingUploadedBytes = 0
-    private var pendingDownloadedBytes = 0
-    private var smoothedUploadSpeed = 0.0
-    private var smoothedDownloadSpeed = 0.0
     private var copy: AppCopy {
         AppCopy(language: AppLanguageStore.shared.selectedLanguage)
     }
@@ -615,15 +605,6 @@ final class TunnelController: ObservableObject {
         proxyLastDetail = detail
         proxyStatusDescription = detail
         proxyInterfaceDescription = "-"
-        lastBytesUploaded = 0
-        lastBytesDownloaded = 0
-        hasSpeedBaseline = false
-        pendingUploadedBytes = 0
-        pendingDownloadedBytes = 0
-        smoothedUploadSpeed = 0
-        smoothedDownloadSpeed = 0
-        lastSpeedUpdate = Date()
-        lastTrafficUpdate = Date()
     }
 
     private func waitForHelperReadiness(timeout: TimeInterval = 6) async throws {
@@ -1201,70 +1182,10 @@ final class TunnelController: ObservableObject {
     }
 
     private func updateSpeeds(up: Int, down: Int) {
-        let now = Date()
+        // Simplified - only update byte counters, skip speed calculations since UI removed
         proxyBytesUploaded = up
         proxyBytesDownloaded = down
         proxyTotalBytes = up + down
-
-        guard hasSpeedBaseline else {
-            hasSpeedBaseline = true
-            lastBytesUploaded = up
-            lastBytesDownloaded = down
-            lastSpeedUpdate = now
-            lastTrafficUpdate = now
-            return
-        }
-
-        if up < lastBytesUploaded || down < lastBytesDownloaded {
-            lastBytesUploaded = up
-            lastBytesDownloaded = down
-            pendingUploadedBytes = 0
-            pendingDownloadedBytes = 0
-            smoothedUploadSpeed = 0
-            smoothedDownloadSpeed = 0
-            proxyUploadSpeed = 0
-            proxyDownloadSpeed = 0
-            lastSpeedUpdate = now
-            lastTrafficUpdate = now
-            return
-        }
-
-        pendingUploadedBytes += max(0, up - lastBytesUploaded)
-        pendingDownloadedBytes += max(0, down - lastBytesDownloaded)
-        lastBytesUploaded = up
-        lastBytesDownloaded = down
-
-        let dt = now.timeIntervalSince(lastSpeedUpdate)
-        guard dt >= 0.45 else { return }
-
-        let hasTrafficChange = pendingUploadedBytes != 0 || pendingDownloadedBytes != 0
-        if hasTrafficChange {
-            let rawUploadSpeed = Double(pendingUploadedBytes) / dt
-            let rawDownloadSpeed = Double(pendingDownloadedBytes) / dt
-            let smoothing = min(max(dt / 1.1, 0.16), 0.34)
-
-            smoothedUploadSpeed += (rawUploadSpeed - smoothedUploadSpeed) * smoothing
-            smoothedDownloadSpeed += (rawDownloadSpeed - smoothedDownloadSpeed) * smoothing
-            proxyUploadSpeed = Int(smoothedUploadSpeed.rounded())
-            proxyDownloadSpeed = Int(smoothedDownloadSpeed.rounded())
-            pendingUploadedBytes = 0
-            pendingDownloadedBytes = 0
-            lastTrafficUpdate = now
-        } else if now.timeIntervalSince(lastTrafficUpdate) >= 1.2 {
-            smoothedUploadSpeed *= 0.72
-            smoothedDownloadSpeed *= 0.72
-
-            if smoothedUploadSpeed < 24 {
-                smoothedUploadSpeed = 0
-            }
-            if smoothedDownloadSpeed < 24 {
-                smoothedDownloadSpeed = 0
-            }
-
-            proxyUploadSpeed = Int(smoothedUploadSpeed.rounded())
-            proxyDownloadSpeed = Int(smoothedDownloadSpeed.rounded())
-        }
-        lastSpeedUpdate = now
     }
 
     private static func reserveAvailableLocalTCPPort() throws -> Int {
